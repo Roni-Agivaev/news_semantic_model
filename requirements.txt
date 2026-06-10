@@ -1,0 +1,25 @@
+# Python dependencies for news_semantic_model
+# Versions are unpinned because the original virtualenv (env/) was not portable.
+# After recreating the environment, pin exact versions with:
+#     pip freeze > requirements.txt
+
+# --- Web scraping ---
+beautifulsoup4
+requests
+playwright
+selenium
+undetected-chromedriver
+curl-cffi
+
+# --- Data ---
+pandas
+numpy
+scikit-learn
+
+# --- ML / DictaBERT model ---
+torch
+transformers
+accelerate
+
+# --- Config (loads the .env secrets file) ---
+python-dotenv

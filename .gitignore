@@ -1,0 +1,54 @@
+# ============================================================
+#  .gitignore  —  news_semantic_model  (code-only repo)
+#  Anything listed here is never staged, committed, or pushed.
+# ============================================================
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ----- Virtual environment (recreate with: pip install -r requirements.txt) -----
+env/
+venv/
+.venv/
+ENV/
+
+# ----- IDE / editor -----
+.idea/
+.vscode/
+
+# ----- OS junk -----
+.DS_Store
+Thumbs.db
+
+# ----- Jupyter -----
+.ipynb_checkpoints/
+
+# ----- Secrets / credentials  (NEVER commit these) -----
+.env
+*.env
+state.json          # browser session cookies written by pipelines_check/get_cookies.py
+*.key
+*.pem
+
+# ----- Trained models / large binaries  (GitHub rejects files > 100 MB) -----
+dictabert_morale_scorer/
+dictabert_morale_scorer_v2/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.h5
+*.ckpt
+*.onnx
+
+# ----- Data files (code-only repo: no CSVs tracked) -----
+*.csv
+News_raw_csv/
+News_tag_csv/
+
+# ----- Logs / generated output -----
+*.log
+predictions_log.txt
