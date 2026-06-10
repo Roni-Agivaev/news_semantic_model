@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 # Assuming your ML model function is still here
-from live_prediction import get_morale_score
+from pipeline.live_prediction import get_morale_score
 
 
 def scrape_news_article(url, retries=2):

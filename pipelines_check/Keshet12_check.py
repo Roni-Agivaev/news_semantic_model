@@ -4,7 +4,7 @@ import random
 from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
 import undetected_chromedriver as uc
-from live_prediction import get_morale_score #model
+from pipeline.live_prediction import get_morale_score #model
 
 
 def scrape_article_Keshet12(driver, url):

@@ -1,3 +1,4 @@
+import os
 import requests
 from bs4 import BeautifulSoup
 import torch
@@ -9,8 +10,8 @@ import pandas as pd
 # Setup the Model (Run once)
 print("Loading the model and preparing environment...")
 
-# Make sure this path points to your saved model directory
-model_path = r"D:\PythonProjects\news_semantic_model\dictabert_morale_scorer"
+# Path to the saved model directory, resolved relative to the project root (one level up from this file)
+model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dictabert_morale_scorer")
 
 # Load the tokenizer and the model
 tokenizer = AutoTokenizer.from_pretrained(model_path)

@@ -2,7 +2,7 @@ from bs4 import BeautifulSoup
 import time
 from datetime import datetime, timezone, timedelta
 import pandas as pd
-from live_prediction import get_morale_score
+from pipeline.live_prediction import get_morale_score
 from playwright.sync_api import sync_playwright
 import random
 

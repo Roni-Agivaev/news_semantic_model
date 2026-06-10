@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 import pandas as pd
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
-from live_prediction import get_morale_score
+from pipeline.live_prediction import get_morale_score
 
 
 def scrape_news_article(url, retries=2):
