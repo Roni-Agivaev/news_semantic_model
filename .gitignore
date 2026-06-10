@@ -52,3 +52,7 @@ News_tag_csv/
 # ----- Logs / generated output -----
 *.log
 predictions_log.txt
+
+# ----- Dashboard (kept local, not tracked) -----
+dashboard/
+open_dashboard.py
