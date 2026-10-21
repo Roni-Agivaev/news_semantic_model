@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS ingest_runs (
     error        TEXT
 );
 CREATE INDEX IF NOT EXISTS ingest_runs_source_ran_at ON ingest_runs (source, ran_at DESC);
+-- articles saved with title/date only because the page itself was blocked
+ALTER TABLE ingest_runs ADD COLUMN IF NOT EXISTS title_only INTEGER NOT NULL DEFAULT 0;
 
 -- Supabase exposes the public schema over its REST API; RLS with no policies
 -- blocks that path. Our direct Postgres connection is unaffected.
@@ -64,18 +66,32 @@ def ensure_schema(conn):
 
 
 def existing_urls(conn, urls):
+    """URLs already stored with their text. Title-only rows are left out so a
+    later run (e.g. from a machine the site doesn't block) can fill them in."""
     if not urls:
         return set()
-    rows = conn.execute("SELECT url FROM articles WHERE url = ANY(%s)", (list(urls),)).fetchall()
+    rows = conn.execute(
+        "SELECT url FROM articles WHERE url = ANY(%s) AND COALESCE(content, '') <> ''", (list(urls),)
+    ).fetchall()
     return {r["url"] for r in rows}
 
 
 def insert_articles(conn, articles, origin="scraper"):
     """Insert articles, skipping any whose url or (source, title) already exists.
-    Returns the number actually inserted."""
+    An article with text also fills in a stored title-only row with the same url.
+    Returns the number of new rows."""
     inserted = 0
     with conn.cursor() as cur:
         for a in articles:
+            content = (a.get("content") or "").replace("\x00", "")
+            if content:
+                cur.execute(
+                    """UPDATE articles SET content = %s
+                       WHERE (url = %s OR (source = %s AND title = %s)) AND COALESCE(content, '') = ''""",
+                    (content, a["url"], a["source"], a["title"]),
+                )
+                if cur.rowcount:
+                    continue
             cur.execute(
                 """
                 INSERT INTO articles (source, url, title, content, published_at, ingested_at, origin, score)
@@ -83,8 +99,7 @@ def insert_articles(conn, articles, origin="scraper"):
                 ON CONFLICT DO NOTHING
                 """,
                 # Postgres rejects NUL characters in text, which scraped pages occasionally contain
-                (a["source"], a["url"], a["title"].replace("\x00", ""),
-                 (a.get("content") or "").replace("\x00", ""), a.get("published_at"),
+                (a["source"], a["url"], a["title"].replace("\x00", ""), content, a.get("published_at"),
                  a.get("ingested_at"), origin, a.get("score")),
             )
             inserted += cur.rowcount
@@ -92,10 +107,11 @@ def insert_articles(conn, articles, origin="scraper"):
     return inserted
 
 
-def log_run(conn, source, links_found, new_articles, failed, error=None):
+def log_run(conn, source, links_found, new_articles, failed, title_only=0, error=None):
     conn.execute(
-        "INSERT INTO ingest_runs (source, links_found, new_articles, failed, error) VALUES (%s, %s, %s, %s, %s)",
-        (source, links_found, new_articles, failed, error),
+        """INSERT INTO ingest_runs (source, links_found, new_articles, failed, title_only, error)
+           VALUES (%s, %s, %s, %s, %s, %s)""",
+        (source, links_found, new_articles, failed, title_only, error),
     )
     conn.commit()
 
@@ -124,7 +140,7 @@ def stats(conn, by="ingested", days=30):
 
     last_runs = conn.execute(
         """
-        SELECT DISTINCT ON (source) source, ran_at, links_found, new_articles, failed, error
+        SELECT DISTINCT ON (source) source, ran_at, links_found, new_articles, failed, title_only, error
         FROM ingest_runs
         ORDER BY source, ran_at DESC
         """

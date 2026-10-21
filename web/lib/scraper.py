@@ -6,6 +6,7 @@ carries a schema.org NewsArticle JSON-LD block with datePublished, so a single
 generic extractor works for all of them. curl_cffi impersonates Chrome's TLS
 fingerprint, which is what gets us past Channel 13's and Mako's bot checks.
 """
+import html as html_lib
 import json
 import re
 import time
@@ -27,6 +28,9 @@ SITES = {
         "category_url": "https://www.kan.org.il/content/kan-news/defense/",
         "link_pattern": r"/content/kan-news/defense/\d+/?",
         "base": "https://www.kan.org.il",
+        # Kan's Cloudflare blocks datacenter IPs (e.g. Vercel) on its pages; the
+        # Google News sitemap also lists new articles with title and date.
+        "sitemap_url": "https://www.kan.org.il/media/sitemap/news/sitemap.xml",
     },
     "Channel 13": {
         "category_url": "https://13tv.co.il/news/politics/security/",
@@ -72,6 +76,28 @@ def get_links(source):
             seen.add(url)
             links.append(url)
     return links
+
+
+def get_sitemap_entries(source):
+    """Read a site's Google News sitemap. Returns {url: {"title", "published_at"}}
+    for the URLs that match the site's article pattern."""
+    site = SITES[source]
+    xml = fetch(site["sitemap_url"])
+    entries = {}
+    for block in re.findall(r"<url\b.*?</url>", xml, flags=re.S):
+        loc = re.search(r"<loc>\s*([^<]+?)\s*</loc>", block)
+        if not loc:
+            continue
+        url = loc.group(1)
+        if not re.fullmatch(re.escape(site["base"]) + site["link_pattern"], url):
+            continue
+        title = re.search(r"<news:title>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*</news:title>", block, flags=re.S)
+        date = re.search(r"<news:publication_date>\s*([^<]+?)\s*</news:publication_date>", block)
+        entries[url] = {
+            "title": html_lib.unescape(title.group(1)).strip() if title else None,
+            "published_at": parse_date(date.group(1)) if date else None,
+        }
+    return entries
 
 
 def parse_date(value):
@@ -148,17 +174,28 @@ def parse_article(html):
     return {"title": title, "content": content, "published_at": parse_date(published)}
 
 
-def scrape_article(source, url, attempts=3, retry_delay=3):
+def scrape_article(source, url, attempts=3, retry_delay=3, fallback=None):
     """Fetch and parse one article. Returns a dict, or None if it isn't usable.
 
     i24 answers a cache miss with an empty JavaScript shell and only serves the
-    rendered article a few seconds later, so an empty result is retried."""
+    rendered article a few seconds later, so an empty result is retried.
+
+    If the page can't be read and `fallback` (sitemap title/date) is given, a
+    title-only article with empty content is returned instead."""
     for attempt in range(attempts):
         if attempt:
             time.sleep(retry_delay)
-        article = parse_article(fetch(url))
+        try:
+            article = parse_article(fetch(url))
+        except requests.exceptions.HTTPError:
+            break  # blocked or gone; retrying won't help
+        except Exception:
+            continue  # timeout / connection error: retry
         if article["title"] and len(article["content"]) >= MIN_CONTENT_CHARS:
             article["source"] = source
             article["url"] = url
             return article
+    if fallback and fallback.get("title"):
+        return {"source": source, "url": url, "title": fallback["title"], "content": "",
+                "published_at": fallback.get("published_at")}
     return None

@@ -5,20 +5,39 @@ ones already in the database, scrape the rest and insert them.
 from concurrent.futures import ThreadPoolExecutor
 
 from . import db
-from .scraper import SITES, get_links, scrape_article
+from .scraper import SITES, get_links, get_sitemap_entries, scrape_article
 
 ARTICLE_WORKERS = 4  # parallel article fetches per site
 
 
+def _err(where, e):
+    return f"{where}: {type(e).__name__}: {e}"[:250]
+
+
 def ingest_site(source):
     """Scrape one site. Opens its own connection so sites can run in parallel."""
-    result = {"source": source, "links_found": 0, "new_articles": 0, "failed": 0, "error": None}
+    result = {"source": source, "links_found": 0, "new_articles": 0, "failed": 0, "title_only": 0, "error": None}
     conn = db.connect()
     try:
+        errors = []
+        # Sites with a news sitemap: it lists new articles with title and date,
+        # and still works when the site blocks its category page.
+        sitemap = {}
+        if SITES[source].get("sitemap_url"):
+            try:
+                sitemap = get_sitemap_entries(source)
+            except Exception as e:
+                errors.append(_err("sitemap", e))
         try:
             links = get_links(source)
         except Exception as e:
-            result["error"] = f"category page: {type(e).__name__}: {e}"[:500]
+            links = []
+            if not sitemap:
+                errors.append(_err("category page", e))
+        links += [u for u in sitemap if u not in links]
+
+        if not links:
+            result["error"] = "; ".join(errors) or "no article links found"
             return result
 
         result["links_found"] = len(links)
@@ -27,7 +46,7 @@ def ingest_site(source):
 
         def scrape(url):
             try:
-                return scrape_article(source, url)
+                return scrape_article(source, url, fallback=sitemap.get(url))
             except Exception:
                 return None
 
@@ -36,6 +55,7 @@ def ingest_site(source):
 
         articles = [a for a in scraped if a]
         result["failed"] = len(todo) - len(articles)
+        result["title_only"] = sum(1 for a in articles if not a["content"])
         result["new_articles"] = db.insert_articles(conn, articles)
         return result
     finally:

@@ -279,13 +279,13 @@ function renderRuns(runs) {
   if (!runs.length) { $("runs").innerHTML = `<div class="empty">No scrape has run yet.</div>`; return; }
   runs.sort((a, b) => (SOURCES.indexOf(a.source) + 99 * !SOURCES.includes(a.source)) - (SOURCES.indexOf(b.source) + 99 * !SOURCES.includes(b.source)));
   $("runs").innerHTML = `<table>
-    <thead><tr><th>Site</th><th>Status</th><th>Ran at</th><th>Links found</th><th>New</th><th>Failed</th><th style="text-align:left">Error</th></tr></thead>
+    <thead><tr><th>Site</th><th>Status</th><th>Ran at</th><th>Links found</th><th>New</th><th title="Saved with title and date only - the article page was blocked">Text missing</th><th>Failed</th><th style="text-align:left">Error</th></tr></thead>
     <tbody>${runs.map(r => {
       const ok = !r.error && r.links_found > 0;
       return `<tr>
         <td><span class="status"><span class="dot" style="background:${colorOf(r.source)}"></span>${esc(r.source)}</span></td>
         <td><span class="status ${ok ? "ok" : "bad"}">${ok ? "✓ OK" : "✕ Failed"}</span></td>
-        <td>${fmtTime(r.ran_at)}</td><td>${r.links_found}</td><td>${r.new_articles}</td><td>${r.failed}</td>
+        <td>${fmtTime(r.ran_at)}</td><td>${r.links_found}</td><td>${r.new_articles}</td><td>${r.title_only || 0}</td><td>${r.failed}</td>
         <td class="err">${esc(r.error || "")}</td></tr>`;
     }).join("")}</tbody></table>`;
 }
