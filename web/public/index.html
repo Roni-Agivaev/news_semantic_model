@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Article Ingestion</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --other: #898781;
+    --good: #0ca30c; --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface-1: #1a1a19;
+      --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
+      --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-primary);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--text-secondary); margin-top: 2px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-1); }
+  .seg button {
+    border: 0; background: none; color: var(--text-secondary); font: inherit; padding: 6px 12px; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { color: var(--text-primary); font-weight: 600; background: var(--grid); }
+
+  .card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .tile .label { color: var(--text-secondary); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+  .tile .value { font-size: 26px; font-weight: 600; margin-top: 4px; }
+  .tile .note { color: var(--text-muted); font-size: 12px; }
+  .dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; color: var(--text-secondary); font-size: 13px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .chart-wrap { position: relative; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .tick { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .tooltip {
+    position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    white-space: nowrap; display: none; z-index: 2;
+  }
+  .tooltip .row { display: flex; align-items: center; gap: 6px; }
+  .tooltip .row b { margin-left: auto; padding-left: 12px; font-variant-numeric: tabular-nums; }
+
+  .table-scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--text-secondary); font-weight: 600; font-size: 13px; }
+  td.zero { color: var(--text-muted); }
+  .status { display: inline-flex; align-items: center; gap: 6px; }
+  .status.ok { color: var(--good); }
+  .status.bad { color: var(--critical); }
+  .err { color: var(--text-secondary); font-size: 12px; white-space: normal; text-align: left; max-width: 360px; }
+  .empty, .error-box { color: var(--text-secondary); padding: 24px 0; text-align: center; }
+  .error-box { color: var(--critical); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Article ingestion</h1>
+      <div class="sub" id="sub">Loading…</div>
+    </div>
+    <div class="controls">
+      <div class="seg" id="by" role="group" aria-label="Group by date">
+        <button data-v="ingested" aria-pressed="true">Ingested date</button>
+        <button data-v="published" aria-pressed="false">Published date</button>
+      </div>
+      <div class="seg" id="days" role="group" aria-label="Date range">
+        <button data-v="7" aria-pressed="false">7 days</button>
+        <button data-v="30" aria-pressed="true">30 days</button>
+        <button data-v="90" aria-pressed="false">90 days</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section class="card">
+    <h2 id="chart-title">Articles per day</h2>
+    <div class="legend" id="legend"></div>
+    <div class="chart-wrap" id="chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>Daily counts</h2>
+    <div class="table-scroll" id="table"></div>
+  </section>
+
+  <section class="card">
+    <h2>Last scrape run per site</h2>
+    <div class="table-scroll" id="runs"></div>
+  </section>
+</main>
+
+<script>
+// Fixed source -> color slot, so a site keeps its color no matter what is filtered.
+const SOURCES = ["Ynet", "Kan News", "Channel 13", "Channel 14", "I24 NEWS", "Channel 12"];
+const colorOf = s => { const i = SOURCES.indexOf(s); return i >= 0 ? `var(--s${i + 1})` : "var(--other)"; };
+const state = { by: "ingested", days: 30 };
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = n => n.toLocaleString("en-US");
+const fmtTime = iso => new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+
+function bindSeg(id, key, cast) {
+  $(id).addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    state[key] = cast(b.dataset.v);
+    for (const x of $(id).querySelectorAll("button")) x.setAttribute("aria-pressed", x === b);
+    load();
+  });
+}
+bindSeg("by", "by", String);
+bindSeg("days", "days", Number);
+
+async function load() {
+  try {
+    const r = await fetch(`/api/stats?by=${state.by}&days=${state.days}`);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    render(data);
+  } catch (e) {
+    $("sub").textContent = "Could not load data";
+    $("chart").innerHTML = `<div class="error-box">${esc(e.message)}</div>`;
+  }
+}
+
+function render(data) {
+  // Sources present in the data, known ones first in their fixed order.
+  const present = new Set([...data.totals.map(t => t.source), ...data.daily.map(d => d.source)]);
+  const sources = [...SOURCES.filter(s => present.has(s)), ...[...present].filter(s => !SOURCES.includes(s)).sort()];
+
+  const lastRun = data.last_runs.map(r => r.ran_at).sort().pop();
+  $("sub").textContent = `${fmt(data.total)} articles in total · last scrape ${lastRun ? fmtTime(lastRun) : "never"}`;
+
+  // Stat tiles
+  const totals = Object.fromEntries(data.totals.map(t => [t.source, t.count]));
+  const runs = Object.fromEntries(data.last_runs.map(r => [r.source, r]));
+  $("tiles").innerHTML = `
+    <div class="tile"><div class="label">All sites</div><div class="value">${fmt(data.total)}</div><div class="note">all time</div></div>` +
+    sources.map(s => `
+    <div class="tile">
+      <div class="label"><span class="dot" style="background:${colorOf(s)}"></span>${esc(s)}</div>
+      <div class="value">${fmt(totals[s] || 0)}</div>
+      <div class="note">${runs[s] ? `+${runs[s].new_articles} last run` : "&nbsp;"}</div>
+    </div>`).join("");
+
+  // Build the full day range (newest last for the chart) so empty days show as gaps.
+  const days = [];
+  const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Jerusalem" }));
+  for (let i = data.days; i >= 0; i--) {
+    const d = new Date(today); d.setDate(d.getDate() - i);
+    days.push(d.toLocaleDateString("en-CA"));
+  }
+  const byDay = {};
+  for (const r of data.daily) (byDay[r.day] ||= {})[r.source] = r.count;
+
+  $("chart-title").textContent = `Articles per day, by ${state.by === "published" ? "published" : "ingested"} date`;
+  $("legend").innerHTML = sources.map(s => `<span><span class="dot" style="background:${colorOf(s)}"></span>${esc(s)}</span>`).join("");
+  renderChart(days, byDay, sources);
+  renderTable(days, byDay, sources);
+  renderRuns(data.last_runs);
+}
+
+function renderChart(days, byDay, sources) {
+  const el = $("chart");
+  const W = 1000, H = 300, m = { t: 8, r: 8, b: 28, l: 40 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const totalOf = d => sources.reduce((a, s) => a + ((byDay[d] || {})[s] || 0), 0);
+  const max = Math.max(1, ...days.map(totalOf));
+  if (!days.some(d => totalOf(d) > 0)) { el.innerHTML = `<div class="empty">No articles in this range yet.</div>`; return; }
+
+  // "nice" y ticks
+  const step = Math.pow(10, Math.floor(Math.log10(max))) * ([1, 2, 5, 10].find(f => max / (Math.pow(10, Math.floor(Math.log10(max))) * f) <= 5) || 10);
+  const yMax = Math.ceil(max / step) * step;
+  const y = v => m.t + ih - (v / yMax) * ih;
+  const band = iw / days.length, bw = Math.max(2, Math.min(28, band * 0.7));
+  const GAP = 2, R = 4;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Stacked bar chart of articles per day by site">`;
+  for (let v = 0; v <= yMax; v += step) {
+    svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(${v === 0 ? "--axis" : "--grid"})" stroke-width="1"/>`;
+    svg += `<text class="tick" x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  }
+  const labelEvery = Math.ceil(days.length / 10);
+  days.forEach((d, i) => {
+    const cx = m.l + band * i + band / 2, x = cx - bw / 2;
+    let acc = 0;
+    const segs = sources.map(s => ({ s, v: (byDay[d] || {})[s] || 0 })).filter(o => o.v > 0);
+    segs.forEach((o, k) => {
+      const y0 = y(acc), y1 = y(acc + o.v); acc += o.v;
+      const top = k === segs.length - 1;
+      const h = Math.max(1, y0 - y1 - (top ? 0 : GAP));
+      const yTop = y0 - h;
+      if (top && h > R) {
+        // rounded data-end on the top segment only
+        svg += `<path d="M${x},${y0}V${yTop + R}Q${x},${yTop} ${x + R},${yTop}H${x + bw - R}Q${x + bw},${yTop} ${x + bw},${yTop + R}V${y0}Z" fill="${colorOf(o.s)}"/>`;
+      } else {
+        svg += `<rect x="${x}" y="${yTop}" width="${bw}" height="${h}" fill="${colorOf(o.s)}"/>`;
+      }
+    });
+    if (i % labelEvery === 0 || i === days.length - 1) {
+      svg += `<text class="tick" x="${cx}" y="${H - 8}" text-anchor="middle">${d.slice(5).replace("-", "/")}</text>`;
+    }
+    // hit target: the whole day column
+    svg += `<rect class="hit" data-i="${i}" x="${m.l + band * i}" y="${m.t}" width="${band}" height="${ih}" fill="transparent"/>`;
+  });
+  svg += `</svg><div class="tooltip" id="tip"></div>`;
+  el.innerHTML = svg;
+
+  const tip = $("tip");
+  el.querySelectorAll(".hit").forEach(h => {
+    h.addEventListener("mousemove", e => {
+      const d = days[+h.dataset.i], row = byDay[d] || {};
+      const rows = sources.filter(s => row[s]).map(s =>
+        `<div class="row"><span class="dot" style="background:${colorOf(s)}"></span>${esc(s)}<b>${row[s]}</b></div>`).join("");
+      tip.innerHTML = `<div style="font-weight:600;margin-bottom:4px">${d} · ${totalOf(d)} articles</div>${rows || '<div style="color:var(--text-muted)">No articles</div>'}`;
+      tip.style.display = "block";
+      const box = el.getBoundingClientRect();
+      let left = e.clientX - box.left + 12;
+      if (left + tip.offsetWidth > box.width) left = e.clientX - box.left - tip.offsetWidth - 12;
+      tip.style.left = Math.max(0, left) + "px";
+      tip.style.top = Math.max(0, e.clientY - box.top - tip.offsetHeight - 8) + "px";
+      h.setAttribute("fill", "rgba(127,127,127,0.08)");
+    });
+    h.addEventListener("mouseleave", () => { tip.style.display = "none"; h.setAttribute("fill", "transparent"); });
+  });
+}
+
+function renderTable(days, byDay, sources) {
+  const rows = [...days].reverse().filter(d => byDay[d]);
+  if (!rows.length) { $("table").innerHTML = `<div class="empty">No articles in this range yet.</div>`; return; }
+  const cell = v => v ? `<td>${fmt(v)}</td>` : `<td class="zero">0</td>`;
+  $("table").innerHTML = `<table>
+    <thead><tr><th>Date</th>${sources.map(s => `<th>${esc(s)}</th>`).join("")}<th>Total</th></tr></thead>
+    <tbody>${rows.map(d => {
+      const r = byDay[d], tot = sources.reduce((a, s) => a + (r[s] || 0), 0);
+      return `<tr><td>${d}</td>${sources.map(s => cell(r[s])).join("")}<td><b>${fmt(tot)}</b></td></tr>`;
+    }).join("")}</tbody></table>`;
+}
+
+function renderRuns(runs) {
+  if (!runs.length) { $("runs").innerHTML = `<div class="empty">No scrape has run yet.</div>`; return; }
+  runs.sort((a, b) => (SOURCES.indexOf(a.source) + 99 * !SOURCES.includes(a.source)) - (SOURCES.indexOf(b.source) + 99 * !SOURCES.includes(b.source)));
+  $("runs").innerHTML = `<table>
+    <thead><tr><th>Site</th><th>Status</th><th>Ran at</th><th>Links found</th><th>New</th><th>Failed</th><th style="text-align:left">Error</th></tr></thead>
+    <tbody>${runs.map(r => {
+      const ok = !r.error && r.links_found > 0;
+      return `<tr>
+        <td><span class="status"><span class="dot" style="background:${colorOf(r.source)}"></span>${esc(r.source)}</span></td>
+        <td><span class="status ${ok ? "ok" : "bad"}">${ok ? "✓ OK" : "✕ Failed"}</span></td>
+        <td>${fmtTime(r.ran_at)}</td><td>${r.links_found}</td><td>${r.new_articles}</td><td>${r.failed}</td>
+        <td class="err">${esc(r.error || "")}</td></tr>`;
+    }).join("")}</tbody></table>`;
+}
+
+load();
+</script>
+</body>
+</html>

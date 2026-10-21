@@ -1,0 +1,4 @@
+# Dependencies for the Vercel site only (kept separate from the repo's ML requirements).
+beautifulsoup4==4.13.4
+curl-cffi==0.11.4
+psycopg[binary]==3.2.9
