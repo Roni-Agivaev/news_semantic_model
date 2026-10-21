@@ -28,9 +28,11 @@ SITES = {
         "category_url": "https://www.kan.org.il/content/kan-news/defense/",
         "link_pattern": r"/content/kan-news/defense/\d+/?",
         "base": "https://www.kan.org.il",
-        # Kan's Cloudflare blocks datacenter IPs (e.g. Vercel) on its pages; the
-        # Google News sitemap also lists new articles with title and date.
+        # Google News sitemap: lists new articles with title and date.
         "sitemap_url": "https://www.kan.org.il/media/sitemap/news/sitemap.xml",
+        # Kan's Cloudflare returns 403 to datacenter IPs (Vercel), sitemap included,
+        # so the Vercel cron skips it; run_local_kan.bat scrapes it from a home PC.
+        "server_blocked": True,
     },
     "Channel 13": {
         "category_url": "https://13tv.co.il/news/politics/security/",

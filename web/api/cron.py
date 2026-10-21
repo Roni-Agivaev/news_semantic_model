@@ -13,6 +13,10 @@ from http.server import BaseHTTPRequestHandler
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib.ingest import run_ingest  # noqa: E402
+from lib.scraper import SITES  # noqa: E402
+
+# Sites that block Vercel's IPs are scraped from a local machine instead.
+SERVER_SOURCES = [s for s, site in SITES.items() if not site.get("server_blocked")]
 
 
 class handler(BaseHTTPRequestHandler):
@@ -23,7 +27,7 @@ class handler(BaseHTTPRequestHandler):
             return self._send(401, {"error": "unauthorized"})
 
         try:
-            result = run_ingest()
+            result = run_ingest(SERVER_SOURCES)
         except Exception as e:
             return self._send(500, {"error": f"{type(e).__name__}: {e}"})
         self._send(200, result)
