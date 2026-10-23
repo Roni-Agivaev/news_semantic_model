@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Article Ingestion</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
   :root {
     color-scheme: light;
@@ -42,6 +43,8 @@
   }
   main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
   header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; margin-bottom: 20px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand img { flex: none; display: block; }
   h1 { font-size: 22px; margin: 0; }
   .sub { color: var(--text-secondary); margin-top: 2px; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -92,9 +95,12 @@
 <body>
 <main>
   <header>
-    <div>
-      <h1>Article ingestion</h1>
-      <div class="sub" id="sub">Loading…</div>
+    <div class="brand">
+      <img src="/favicon.svg" width="40" height="40" alt="">
+      <div>
+        <h1>Article ingestion</h1>
+        <div class="sub" id="sub">Loading…</div>
+      </div>
     </div>
     <div class="controls">
       <div class="seg" id="by" role="group" aria-label="Group by date">
