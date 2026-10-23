@@ -22,7 +22,7 @@ No ML model runs here: the model is a separate step.
   come from each article's schema.org `NewsArticle` data.
 - `lib/ingest.py`: for each site (all in parallel): read the category page, skip
   URLs already in the DB, scrape the rest, insert them, log the run.
-- `api/cron.py`: `GET /api/cron`, run daily by Vercel Cron at 04:00 UTC (07:00 Israel).
+- `api/cron.py`: `GET /api/cron`, run daily by Vercel Cron at 20:00 UTC (23:00 Israel winter time, 22:00 summer).
   It requires the `CRON_SECRET` header, so nobody else can trigger it.
 - `api/stats.py`: `GET /api/stats?by=ingested|published&days=30`, the counts the dashboard uses.
 - `public/index.html`: the dashboard.
@@ -63,5 +63,5 @@ Running the import twice is safe, because rows that already exist are skipped.
 
 ## Local tools
 - `python run_local.py`: run one ingestion from your computer.
-- Kan News blocks Vercel, so it runs daily in GitHub Actions instead (`.github/workflows/kan-daily.yml`, needs the `DATABASE_URL` repo secret).
+- Kan News blocks Vercel, so it runs daily in GitHub Actions instead (`.github/workflows/kan-daily.yml`, 20:15 UTC, needs the `DATABASE_URL` repo secret).
 - `python dev_server.py`: preview the dashboard at http://localhost:8000.

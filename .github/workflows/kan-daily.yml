@@ -4,7 +4,7 @@
 name: Kan News daily scrape
 on:
   schedule:
-    - cron: "15 4 * * *"   # 04:15 UTC, right after the Vercel cron
+    - cron: "15 20 * * *"  # 20:15 UTC (23:15 Israel winter / 22:15 summer), right after the Vercel cron
   workflow_dispatch:         # "Run workflow" button for a manual run
 jobs:
   scrape:

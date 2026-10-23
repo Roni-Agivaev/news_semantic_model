@@ -6,6 +6,6 @@
     "api/stats.py": { "maxDuration": 30 }
   },
   "crons": [
-    { "path": "/api/cron", "schedule": "0 4 * * *" }
+    { "path": "/api/cron", "schedule": "0 20 * * *" }
   ]
 }
