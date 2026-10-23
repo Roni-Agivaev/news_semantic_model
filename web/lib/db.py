@@ -124,34 +124,63 @@ def stats(conn, by="ingested", days=30):
     tz = os.environ.get("DASHBOARD_TZ", "Asia/Jerusalem")
     day_expr = f"({date_col} AT TIME ZONE %(tz)s)::date"
 
-    totals = conn.execute(
-        "SELECT source, count(*)::int AS count FROM articles GROUP BY source ORDER BY count DESC"
-    ).fetchall()
-
-    daily = conn.execute(
+    # Everything in one round trip: the database is far away, so each query costs ~0.25s.
+    row = conn.execute(
         f"""
-        SELECT {day_expr} AS day, source, count(*)::int AS count
-        FROM articles
-        WHERE %(days)s::int = 0 OR {day_expr} >= (now() AT TIME ZONE %(tz)s)::date - %(days)s::int
-        GROUP BY 1, 2
-        ORDER BY 1 DESC, 2
+        WITH runs AS (
+            SELECT *, (error IS NULL AND links_found > 0) AS ok,
+                   row_number() OVER (PARTITION BY source ORDER BY ran_at DESC) AS rn
+            FROM ingest_runs
+        )
+        SELECT json_build_object(
+          'today', (now() AT TIME ZONE %(tz)s)::date,
+
+          'kpis', (SELECT json_build_object(
+              'total',     count(*),
+              'from_csv',  count(*) FILTER (WHERE origin = 'csv'),
+              'today',     count(*) FILTER (WHERE (ingested_at AT TIME ZONE %(tz)s)::date = (now() AT TIME ZONE %(tz)s)::date),
+              'last7',     count(*) FILTER (WHERE ingested_at >= now() - interval '7 days'),
+              'prev7',     count(*) FILTER (WHERE ingested_at >= now() - interval '14 days'
+                                              AND ingested_at <  now() - interval '7 days'))
+            FROM articles),
+
+          'daily', (SELECT coalesce(json_agg(d ORDER BY d.day DESC, d.source), '[]') FROM (
+              SELECT {day_expr} AS day, source, count(*)::int AS count
+              FROM articles
+              WHERE %(days)s::int = 0 OR {day_expr} >= (now() AT TIME ZONE %(tz)s)::date - %(days)s::int
+              GROUP BY 1, 2) d),
+
+          -- Per site: size and data quality
+          'sites', (SELECT coalesce(json_agg(s ORDER BY s.total DESC), '[]') FROM (
+              SELECT source,
+                     count(*)::int AS total,
+                     count(*) FILTER (WHERE origin = 'csv')::int AS from_csv,
+                     count(*) FILTER (WHERE coalesce(content, '') <> '')::int AS with_text,
+                     count(*) FILTER (WHERE published_at IS NOT NULL)::int AS with_date,
+                     round(avg(length(content)) FILTER (WHERE coalesce(content, '') <> ''))::int AS avg_len,
+                     round((percentile_cont(0.5) WITHIN GROUP (
+                         ORDER BY extract(epoch FROM ingested_at - published_at) / 3600)
+                       FILTER (WHERE origin = 'scraper' AND published_at IS NOT NULL))::numeric, 1) AS median_delay_h
+              FROM articles GROUP BY source) s),
+
+          -- Per site: scraping health
+          'health', (SELECT coalesce(json_agg(h), '[]') FROM (
+              SELECT r.source,
+                     max(r.ran_at) FILTER (WHERE r.ok) AS last_ok,
+                     (SELECT row_to_json(x) FROM (
+                         SELECT ran_at, ok, links_found, new_articles, failed, title_only, error
+                         FROM runs WHERE source = r.source AND rn = 1) x) AS last_run,
+                     (SELECT json_agg(json_build_object('ran_at', ran_at, 'ok', ok, 'new', new_articles,
+                                                        'failed', failed, 'error', error) ORDER BY ran_at)
+                      FROM runs WHERE source = r.source AND rn <= 14) AS history
+              FROM runs r GROUP BY r.source) h),
+
+          'latest', (SELECT coalesce(json_agg(a), '[]') FROM (
+              SELECT source, title, url, published_at, ingested_at
+              FROM articles WHERE origin = 'scraper'
+              ORDER BY coalesce(published_at, ingested_at) DESC LIMIT 12) a)
+        ) AS stats
         """,
         {"tz": tz, "days": days},
-    ).fetchall()
-
-    last_runs = conn.execute(
-        """
-        SELECT DISTINCT ON (source) source, ran_at, links_found, new_articles, failed, title_only, error
-        FROM ingest_runs
-        ORDER BY source, ran_at DESC
-        """
-    ).fetchall()
-
-    return {
-        "by": by,
-        "days": days,
-        "total": sum(r["count"] for r in totals),
-        "totals": totals,
-        "daily": [{**r, "day": r["day"].isoformat()} for r in daily],
-        "last_runs": [{**r, "ran_at": r["ran_at"].isoformat()} for r in last_runs],
-    }
+    ).fetchone()
+    return {"by": by, "days": days, **row["stats"]}
