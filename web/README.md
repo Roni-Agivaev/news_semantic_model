@@ -24,7 +24,8 @@ No ML model runs here: the model is a separate step.
   URLs already in the DB, scrape the rest, insert them, log the run.
 - `api/cron.py`: `GET /api/cron`, run daily by Vercel Cron at 20:00 UTC (23:00 Israel winter time, 22:00 summer).
   It requires the `CRON_SECRET` header, so nobody else can trigger it.
-- `api/stats.py`: `GET /api/stats?by=ingested|published&days=30`, the counts the dashboard uses.
+- `api/stats.py`: `GET /api/stats?by=ingested|published&days=30`, the counts the dashboard uses (requires sign-in).
+- `api/login.py`: password sign-in; sets an HttpOnly cookie that lasts a year.
 - `public/index.html`: the dashboard.
 - Tables (created automatically on first run): `articles` and `ingest_runs`.
   An article counts as a duplicate if it has the same `url`, or the same `source` + `title`.
@@ -42,6 +43,7 @@ No ML model runs here: the model is a separate step.
 3. Add these **Environment Variables**:
    - `DATABASE_URL`: the Supabase connection string from step 1
    - `CRON_SECRET`: any long random string
+   - `DASHBOARD_PASSWORD`: the password for signing in to the dashboard. Changing it signs out every device.
 4. Click **Deploy**. The cron job is picked up from `vercel.json` automatically.
 
 To run the first ingestion right away instead of waiting for the cron:

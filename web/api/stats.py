@@ -1,5 +1,6 @@
 """
 GET /api/stats?by=ingested|published&days=30 — article counts for the dashboard.
+Requires the login cookie (see api/login.py).
 """
 import json
 import os
@@ -9,11 +10,14 @@ from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from lib import db  # noqa: E402
+from lib import auth, db  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if not auth.is_logged_in(self.headers):
+            return self._send(401, {"error": "login required"})
+
         query = parse_qs(urlparse(self.path).query)
         by = "published" if query.get("by", [""])[0] == "published" else "ingested"
         try:
@@ -31,10 +35,13 @@ class handler(BaseHTTPRequestHandler):
             status = 200
         except Exception as e:
             body, status = {"error": f"{type(e).__name__}: {e}"}, 500
+        self._send(status, body)
 
+    def _send(self, status, body):
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "s-maxage=60, stale-while-revalidate=300")
+        # Per-user data: never cache it on Vercel's shared CDN
+        self.send_header("Cache-Control", "private, no-store")
         self.end_headers()
         self.wfile.write(data)

@@ -162,11 +162,44 @@
   details[open] summary::before { transform: rotate(90deg); }
   details[open] summary { margin-bottom: 12px; }
 
+  /* ---------- login ---------- */
+  body.locked main { display: none; }
+  #login { display: none; min-height: 100vh; min-height: 100dvh; place-items: center; padding: 24px 16px; }
+  body.locked #login { display: grid; }
+  .login-card { width: 100%; max-width: 360px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 16px; padding: 28px 24px; text-align: center; }
+  .login-card img { border-radius: 12px; }
+  .login-card h1 { margin: 12px 0 4px; }
+  .login-card p { color: var(--text-secondary); margin: 0 0 20px; }
+  .login-card input {
+    width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--axis); background: var(--page); color: var(--text-primary);
+  }
+  .login-card input:focus { outline: 2px solid var(--s1); outline-offset: 1px; }
+  .btn {
+    font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 10px 14px; cursor: pointer;
+    background: var(--text-primary); color: var(--page);
+  }
+  .login-card .btn { width: 100%; margin-top: 10px; font-size: 15px; }
+  .login-card .btn:disabled { opacity: .6; cursor: default; }
+  .login-error { color: var(--critical); font-size: 13px; min-height: 18px; margin-top: 10px; }
+  .link-btn { border: 0; background: none; color: var(--text-secondary); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; padding: 0; }
+
   .empty, .error-box { color: var(--text-secondary); padding: 24px 0; text-align: center; }
   .error-box { color: var(--critical); }
 </style>
 </head>
 <body>
+<section id="login">
+  <form class="login-card" id="login-form">
+    <img src="/favicon.svg" width="56" height="56" alt="">
+    <h1>Article ingestion</h1>
+    <p>Sign in to see the dashboard</p>
+    <input type="text" name="username" value="owner" autocomplete="username" hidden>
+    <input type="password" id="password" autocomplete="current-password" placeholder="Password" required>
+    <button class="btn" type="submit" id="login-btn">Sign in</button>
+    <div class="login-error" id="login-error" role="alert"></div>
+  </form>
+</section>
 <main>
   <header>
     <div class="brand">
@@ -180,6 +213,7 @@
       <span class="pill" id="pill">Loading…</span>
       <span id="last-run"></span>
       <span id="next-run"></span>
+      <button class="link-btn" id="logout" type="button">Sign out</button>
     </div>
   </header>
 
@@ -299,9 +333,39 @@ bindSeg("days", "days", Number);
 // Switching the chart view only re-draws; the data is the same.
 bindSeg("view", "view", String, () => lastData && renderMain(lastData));
 
+// ---------- login ----------
+function lock(locked) {
+  document.body.classList.toggle("locked", locked);
+  if (locked) setTimeout(() => $("password").focus(), 0);
+}
+$("login-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("login-btn").disabled = true; $("login-error").textContent = "";
+  try {
+    const r = await fetch("/api/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: $("password").value }),
+    });
+    if (!r.ok) throw new Error(r.status === 401 ? "Wrong password" : `Sign-in failed (${r.status})`);
+    $("password").value = "";
+    lock(false);
+    load();
+  } catch (err) {
+    $("login-error").textContent = err.message;
+  } finally {
+    $("login-btn").disabled = false;
+  }
+});
+$("logout").addEventListener("click", async () => {
+  await fetch("/api/login?logout=1", { method: "POST" });
+  lastData = null;
+  lock(true);
+});
+
 async function load() {
   try {
     const r = await fetch(`/api/stats?by=${state.by}&days=${state.days}`);
+    if (r.status === 401) return lock(true);
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || r.statusText);
     lastData = data;
