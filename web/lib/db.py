@@ -117,7 +117,8 @@ def log_run(conn, source, links_found, new_articles, failed, title_only=0, error
 
 
 def stats(conn, by="ingested", days=30):
-    """Counts for the dashboard. `by` picks which date articles are grouped on."""
+    """Counts for the dashboard. `by` picks which date articles are grouped on;
+    days=0 means all time."""
     date_col = "COALESCE(published_at, ingested_at)" if by == "published" else "ingested_at"
     # Days are counted in Israel time. Overridable for Postgres builds without tz data.
     tz = os.environ.get("DASHBOARD_TZ", "Asia/Jerusalem")
@@ -131,7 +132,7 @@ def stats(conn, by="ingested", days=30):
         f"""
         SELECT {day_expr} AS day, source, count(*)::int AS count
         FROM articles
-        WHERE {day_expr} >= (now() AT TIME ZONE %(tz)s)::date - %(days)s::int
+        WHERE %(days)s::int = 0 OR {day_expr} >= (now() AT TIME ZONE %(tz)s)::date - %(days)s::int
         GROUP BY 1, 2
         ORDER BY 1 DESC, 2
         """,

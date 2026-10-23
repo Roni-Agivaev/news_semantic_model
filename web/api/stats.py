@@ -17,7 +17,8 @@ class handler(BaseHTTPRequestHandler):
         query = parse_qs(urlparse(self.path).query)
         by = "published" if query.get("by", [""])[0] == "published" else "ingested"
         try:
-            days = max(1, min(int(query.get("days", ["30"])[0]), 365))
+            days = int(query.get("days", ["30"])[0])
+            days = 0 if days <= 0 else min(days, 365)  # 0 = all time
         except ValueError:
             days = 30
 
