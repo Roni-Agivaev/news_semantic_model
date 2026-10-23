@@ -2,9 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Article Ingestion</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<!-- Home-screen app (iPhone "Add to Home Screen", Android install) -->
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Articles">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
 <style>
   :root {
     color-scheme: light;
@@ -41,7 +50,11 @@
     margin: 0; background: var(--page); color: var(--text-primary);
     font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  /* Full window width; safe-area insets keep content clear of the iPhone notch/status bar */
+  main {
+    padding: max(24px, env(safe-area-inset-top)) max(clamp(16px, 3vw, 40px), env(safe-area-inset-right))
+             max(48px, env(safe-area-inset-bottom)) max(clamp(16px, 3vw, 40px), env(safe-area-inset-left));
+  }
   header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: end; justify-content: space-between; margin-bottom: 20px; }
   .brand { display: flex; align-items: center; gap: 12px; }
   .brand img { flex: none; display: block; }
@@ -61,7 +74,7 @@
   .card-head h2 { margin: 0; }
   .end-label { fill: var(--text-primary); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
-  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
   .tile .label { color: var(--text-secondary); font-size: 13px; display: flex; align-items: center; gap: 6px; }
   .tile .value { font-size: 26px; font-weight: 600; margin-top: 4px; }
@@ -230,9 +243,21 @@ function render(data) {
   renderRuns(data.last_runs);
 }
 
+// Charts are drawn at the container's real pixel width (re-drawn on resize),
+// so they fill wide screens without stretching text.
+function chartSize(el) {
+  const W = Math.max(300, Math.round(el.clientWidth || 1000));
+  return { W, H: W < 600 ? 240 : 320 };
+}
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => lastData && render(lastData), 150);
+});
+
 function renderChart(days, byDay, sources) {
   const el = $("chart");
-  const W = 1000, H = 300, m = { t: 8, r: 8, b: 28, l: 40 };
+  const { W, H } = chartSize(el), m = { t: 8, r: 8, b: 28, l: 40 };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   const totalOf = d => sources.reduce((a, s) => a + ((byDay[d] || {})[s] || 0), 0);
   const max = Math.max(1, ...days.map(totalOf));
@@ -250,7 +275,7 @@ function renderChart(days, byDay, sources) {
     svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(${v === 0 ? "--axis" : "--grid"})" stroke-width="1"/>`;
     svg += `<text class="tick" x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
   }
-  const labelEvery = Math.ceil(days.length / 10);
+  const labelEvery = Math.ceil(days.length / Math.max(3, Math.floor(iw / 80)));
   days.forEach((d, i) => {
     const cx = m.l + band * i + band / 2, x = cx - bw / 2;
     let acc = 0;
@@ -298,7 +323,7 @@ function renderChart(days, byDay, sources) {
 // Running total of articles in the database, one point per day.
 function renderTotal(days, byDay, sources, total) {
   const el = $("chart");
-  const W = 1000, H = 300, m = { t: 20, r: 56, b: 28, l: 48 };
+  const { W, H } = chartSize(el), m = { t: 20, r: 56, b: 28, l: 48 };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   const added = days.map(d => sources.reduce((a, s) => a + ((byDay[d] || {})[s] || 0), 0));
   // Articles from before the first day shown, so the line starts at the real total.
@@ -318,7 +343,7 @@ function renderTotal(days, byDay, sources, total) {
     svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(${v === 0 ? "--axis" : "--grid"})" stroke-width="1"/>`;
     svg += `<text class="tick" x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
   }
-  const labelEvery = Math.ceil(days.length / 10);
+  const labelEvery = Math.ceil(days.length / Math.max(3, Math.floor(iw / 80)));
   days.forEach((d, i) => {
     if (i % labelEvery === 0 || i === days.length - 1)
       svg += `<text class="tick" x="${x(i)}" y="${H - 8}" text-anchor="middle">${d.slice(5).replace("-", "/")}</text>`;
