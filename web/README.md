@@ -63,4 +63,5 @@ Running the import twice is safe, because rows that already exist are skipped.
 
 ## Local tools
 - `python run_local.py`: run one ingestion from your computer.
+- Kan News blocks Vercel, so it runs daily in GitHub Actions instead (`.github/workflows/kan-daily.yml`, needs the `DATABASE_URL` repo secret).
 - `python dev_server.py`: preview the dashboard at http://localhost:8000.

@@ -7,7 +7,7 @@ One-time import of existing article CSVs into the database. Run locally:
 
 Understands both CSV layouts in this project:
   - pipeline log:   Time, Source, Title, Content, Predicted Score, Exact Input
-  - bulk scrapers:  Date, Title, Author, Content (+ URL when present)
+  - bulk scrapers:  Date, Title, Author, Content, URL (+ scores) - site taken from the URL
 
 Rows already in the database (same URL, or same source + title) are skipped,
 so running it twice is safe. Needs DATABASE_URL (read from web/.env if present).
@@ -18,6 +18,8 @@ import hashlib
 import os
 import sys
 from collections import Counter
+from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -60,23 +62,38 @@ def normalize_source(value):
     return SOURCE_ALIASES.get(v.lower(), v)
 
 
+def source_from_url(url):
+    """Match a URL to a site by its domain, e.g. https://www.mako.co.il/... -> Channel 12."""
+    host = urlparse(url).netloc.lower().removeprefix("www.")
+    for name, site in SITES.items():
+        if host and host == urlparse(site["base"]).netloc.lower().removeprefix("www."):
+            return name
+    return None
+
+
 def read_rows(path, forced_source=None):
+    # Rows without their own ingest time are dated by when the CSV was last saved,
+    # so old articles don't all show up on the dashboard as "ingested today".
+    file_saved_at = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
     with open(path, encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
         header = {h.strip().lower(): h for h in (reader.fieldnames or [])}
         cols = {key: next((header[a] for a in aliases if a in header), None) for key, aliases in COLUMN_ALIASES.items()}
         if not cols["title"]:
             sys.exit(f"{path}: no Title column found (columns: {reader.fieldnames})")
-        if not cols["source"] and not forced_source:
-            sys.exit(f"{path}: no Source column - pass --source, one of: {', '.join(SITES)}")
+        if not cols["source"] and not cols["url"] and not forced_source:
+            sys.exit(f"{path}: no Source or URL column - pass --source, one of: {', '.join(SITES)}")
 
         for raw in reader:
             get = lambda key: (raw.get(cols[key]) or "").strip() if cols[key] else ""
             title = get("title")
             if not title:
                 continue
-            source = normalize_source(forced_source or get("source"))
             url = get("url")
+            source = normalize_source(forced_source or get("source")) or source_from_url(url)
+            if not source:
+                print(f"  skipped (unknown site): {url or title[:60]}")
+                continue
             if not url:
                 # The old pipeline log has no URL column; give the row a stable synthetic key.
                 url = "csv:" + hashlib.sha1(f"{source}|{title}".encode("utf-8")).hexdigest()
@@ -90,7 +107,7 @@ def read_rows(path, forced_source=None):
                 "title": title,
                 "content": get("content"),
                 "published_at": parse_date(get("published_at")),
-                "ingested_at": parse_date(get("ingested_at").replace(" ", "T", 1)),
+                "ingested_at": parse_date(get("ingested_at").replace(" ", "T", 1)) or file_saved_at,
                 "score": score,
             }
 
@@ -109,8 +126,7 @@ def main():
     for s, n in by_source.most_common():
         flag = "" if s in SITES else "   <- not one of the scraper's site names"
         print(f"  {s:<12} {n}{flag}")
-    print(f"  with published date: {sum(1 for r in rows if r['published_at'])}, "
-          f"with ingest time: {sum(1 for r in rows if r['ingested_at'])}")
+    print(f"  with published date: {sum(1 for r in rows if r['published_at'])}")
 
     if args.dry_run:
         print("Dry run - nothing written.")

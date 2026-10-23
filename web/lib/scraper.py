@@ -30,8 +30,8 @@ SITES = {
         "base": "https://www.kan.org.il",
         # Google News sitemap: lists new articles with title and date.
         "sitemap_url": "https://www.kan.org.il/media/sitemap/news/sitemap.xml",
-        # Kan's Cloudflare returns 403 to datacenter IPs (Vercel), sitemap included,
-        # so the Vercel cron skips it; run_local_kan.bat scrapes it from a home PC.
+        # Kan's Cloudflare returns 403 to Vercel's IPs, sitemap included, so the
+        # Vercel cron skips it; .github/workflows/kan-daily.yml scrapes it instead.
         "server_blocked": True,
     },
     "Channel 13": {
@@ -111,8 +111,9 @@ def parse_date(value):
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         dt = None
-        # Kan's on-page format, e.g. "16.10.2026 02:59:05"
-        for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y"):
+        # Kan's on-page format, e.g. "16.10.2026 02:59:05", and the old CSVs' "06/04/2026 14:40"
+        for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y",
+                    "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y"):
             try:
                 dt = datetime.strptime(value, fmt)
                 break

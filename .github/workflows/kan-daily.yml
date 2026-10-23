@@ -1,0 +1,30 @@
+# Daily Kan News scrape. Kan's Cloudflare blocks Vercel's servers but lets
+# GitHub's runners through, so Kan is ingested here instead of by the Vercel cron.
+# Needs the repository secret DATABASE_URL (Settings -> Secrets and variables -> Actions).
+name: Kan News daily scrape
+on:
+  schedule:
+    - cron: "15 4 * * *"   # 04:15 UTC, right after the Vercel cron
+  workflow_dispatch:         # "Run workflow" button for a manual run
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: web/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Scrape Kan News
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          python run_local.py "Kan News" | tee result.json
+          python -c "import json,sys; s=json.load(open('result.json'))['sites'][0]; sys.exit(1 if s['error'] else 0)"
