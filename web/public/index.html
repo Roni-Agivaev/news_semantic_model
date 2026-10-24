@@ -182,6 +182,13 @@
   .login-card .btn { width: 100%; margin-top: 10px; font-size: 15px; }
   .login-card .btn:disabled { opacity: .6; cursor: default; }
   .login-error { color: var(--critical); font-size: 13px; min-height: 18px; margin-top: 10px; }
+  .btn.small { padding: 6px 14px; font-size: 13px; border-radius: 8px; }
+  .btn:disabled { opacity: .6; cursor: default; }
+  .notice { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; font-size: 13px; }
+  .notice .head { font-weight: 600; margin-bottom: 4px; }
+  .notice.ok .head { color: var(--good-text); }
+  .notice.bad .head { color: var(--critical); }
+  .notice .close { float: right; }
   .link-btn { border: 0; background: none; color: var(--text-secondary); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; padding: 0; }
 
   .empty, .error-box { color: var(--text-secondary); padding: 24px 0; text-align: center; }
@@ -213,9 +220,12 @@
       <span class="pill" id="pill">Loading…</span>
       <span id="last-run"></span>
       <span id="next-run"></span>
+      <button class="btn small" id="ingest-btn" type="button">Ingest now</button>
       <button class="link-btn" id="logout" type="button">Sign out</button>
     </div>
   </header>
+
+  <div class="notice" id="ingest-result" role="status" hidden></div>
 
   <section class="kpis" id="kpis"></section>
 
@@ -360,6 +370,39 @@ $("logout").addEventListener("click", async () => {
   await fetch("/api/login?logout=1", { method: "POST" });
   lastData = null;
   lock(true);
+});
+
+// ---------- manual ingestion ----------
+$("ingest-btn").addEventListener("click", async () => {
+  const btn = $("ingest-btn"), box = $("ingest-result");
+  btn.disabled = true; btn.textContent = "Ingesting…";
+  box.hidden = false; box.className = "notice";
+  box.innerHTML = `<div class="head">Ingesting…</div>Scraping 5 sites now. This takes about 10 to 30 seconds.`;
+  const t0 = Date.now();
+  try {
+    const r = await fetch("/api/cron", { method: "POST" });
+    if (r.status === 401) { box.hidden = true; return lock(true); }
+    const res = await r.json();
+    if (!r.ok) throw new Error(res.error || `HTTP ${r.status}`);
+    const secs = Math.round((Date.now() - t0) / 1000);
+    const sites = [...res.sites].sort((a, b) => order(a.source) - order(b.source));
+    const bad = sites.filter(s => s.error);
+    const parts = sites.map(s => s.error
+      ? `<span style="color:var(--critical)">${esc(s.source)}: failed</span>`
+      : `${esc(s.source)} +${s.new_articles}${s.failed ? ` <span class="muted">(${s.failed} skipped)</span>` : ""}`);
+    box.className = "notice " + (bad.length ? "bad" : "ok");
+    box.innerHTML = `<button class="link-btn close" type="button" onclick="this.parentElement.hidden=true">Close</button>
+      <div class="head">${bad.length ? "⚠" : "✓"} Done in ${secs} s: ${fmt(res.new_articles)} new article${res.new_articles === 1 ? "" : "s"}</div>
+      <div>${parts.join(" · ")}</div>
+      ${bad.map(s => `<div class="muted">${esc(s.source)}: ${esc(s.error)}</div>`).join("")}
+      ${res.kan ? `<div class="muted">Kan News: ${esc(res.kan.message)}</div>` : ""}`;
+    load();
+  } catch (e) {
+    box.className = "notice bad";
+    box.innerHTML = `<button class="link-btn close" type="button" onclick="this.parentElement.hidden=true">Close</button><div class="head">✕ Ingestion failed</div>${esc(e.message)}`;
+  } finally {
+    btn.disabled = false; btn.textContent = "Ingest now";
+  }
 });
 
 async function load() {

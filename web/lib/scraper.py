@@ -65,18 +65,26 @@ def fetch(url, timeout=20):
     return resp.text
 
 
-def get_links(source):
-    """Return the unique, absolute article URLs listed on a site's category page."""
+def get_links(source, attempts=3, retry_delay=3):
+    """Return the unique, absolute article URLs listed on a site's category page.
+
+    Like its article pages, i24's category page sometimes answers with an empty
+    JavaScript shell first, so a page with no links is fetched again."""
     site = SITES[source]
-    html = fetch(site["category_url"])
     links = []
-    seen = set()
-    for path in re.findall(site["link_pattern"], html):
-        # strip a full domain if the regex matched inside an absolute href
-        url = site["base"] + path if path.startswith("/") else path
-        if url not in seen:
-            seen.add(url)
-            links.append(url)
+    for attempt in range(attempts):
+        if attempt:
+            time.sleep(retry_delay)
+        html = fetch(site["category_url"])
+        seen = set()
+        for path in re.findall(site["link_pattern"], html):
+            # strip a full domain if the regex matched inside an absolute href
+            url = site["base"] + path if path.startswith("/") else path
+            if url not in seen:
+                seen.add(url)
+                links.append(url)
+        if links:
+            break
     return links
 
 

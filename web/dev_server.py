@@ -11,6 +11,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+from api.cron import handler as CronHandler  # noqa: E402
 from api.login import handler as LoginHandler  # noqa: E402
 from api.stats import handler as StatsHandler  # noqa: E402
 from import_csv import load_env  # noqa: E402
@@ -33,6 +34,8 @@ class DevHandler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path.startswith("/api/login"):
             return delegate(self, LoginHandler, "do_POST")
+        if self.path.startswith("/api/cron"):
+            return delegate(self, CronHandler, "do_POST")
         self.send_error(404)
 
 
