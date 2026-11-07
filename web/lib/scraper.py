@@ -124,9 +124,17 @@ def _fetch_links(site, page_url, schedule):
 def get_links(source, schedule=RETRY_AT_S, known=None, max_pages=MAX_PAGES):
     """Return the unique, absolute article URLs listed in a site's section.
 
-    Sites with a `page_url` are walked page by page, up to `max_pages`; the rest
-    read their category page alone. The walk also stops on the first page with
-    no links at all.
+    Sites with a `page_url` are walked page by page; the rest read their
+    category page alone. The walk stops before page N+1 once every link on
+    page N is accounted for - already seen in this walk, or reported stored by
+    `known` - and at `max_pages` either way. It also stops on a page with no
+    links at all.
+
+    `known` is an optional callable taking URLs and returning the subset
+    already stored. It is how the database reaches this module, which imports
+    nothing from db.py. With `known=None` nothing counts as stored, so only a
+    repeated page, an empty page or `max_pages` ends the walk; that is the deep
+    walk web/backfill.py wants.
 
     Page 1 is the section itself, so a failure there is raised for the caller to
     record. A later page that cannot be fetched only ends the walk, so broken
@@ -145,6 +153,11 @@ def get_links(source, schedule=RETRY_AT_S, known=None, max_pages=MAX_PAGES):
         fresh = [u for u in page if u not in seen]
         seen.update(fresh)
         links += fresh
+        # Only `fresh` needs asking about: the rest of the page was already
+        # collected earlier in this walk, so it is accounted for either way.
+        stored = known(fresh) if known and fresh else set()
+        if all(u in stored for u in fresh):
+            break
     return links
 
 

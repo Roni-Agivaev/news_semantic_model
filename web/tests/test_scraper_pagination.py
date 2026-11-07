@@ -139,5 +139,33 @@ class WalkTest(unittest.TestCase):
         with self.assertRaises(HTTP_ERROR):
             self.walk(site, max_pages=3)
 
+    def test_stops_before_the_page_after_an_all_known_one(self):
+        """Page 2 holds nothing new, so page 3 is never fetched."""
+        site = FakeSite({PAGE_1: section_page("a1", "a2"),
+                         page_n(2): section_page("b1", "b2"),
+                         page_n(3): section_page("c1", "c2")})
+        stored = set(article_urls("b1", "b2"))
+        asked = []
+
+        def known(urls):
+            asked.append(list(urls))
+            return {u for u in urls if u in stored}
+
+        links = self.walk(site, known=known, max_pages=5)
+        self.assertEqual(site.pages_seen, [PAGE_1, page_n(2)],
+                         msg="page 3 should not have been fetched")
+        self.assertEqual(links, article_urls("a1", "a2", "b1", "b2"))
+        self.assertEqual(asked, [article_urls("a1", "a2"), article_urls("b1", "b2")],
+                         msg="known should be asked once per page, about that page's new links")
+
+    def test_a_page_that_only_repeats_earlier_links_ends_the_walk(self):
+        """Some sites clamp an out-of-range page back to the last real one."""
+        site = FakeSite({PAGE_1: section_page("a1", "a2"),
+                         page_n(2): section_page("a1", "a2"),
+                         page_n(3): section_page("c1", "c2")})
+        links = self.walk(site, max_pages=5)
+        self.assertEqual(site.pages_seen, [PAGE_1, page_n(2)])
+        self.assertEqual(links, article_urls("a1", "a2"))
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
