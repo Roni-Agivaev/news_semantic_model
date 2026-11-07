@@ -126,11 +126,20 @@ def get_links(source, schedule=RETRY_AT_S, known=None, max_pages=MAX_PAGES):
 
     Sites with a `page_url` are walked page by page, up to `max_pages`; the rest
     read their category page alone. The walk also stops on the first page with
-    no links at all."""
+    no links at all.
+
+    Page 1 is the section itself, so a failure there is raised for the caller to
+    record. A later page that cannot be fetched only ends the walk, so broken
+    pagination degrades to reading page 1 instead of losing the site."""
     site = SITES[source]
     links, seen = [], set()
-    for page_url in _page_urls(site, max_pages):
-        page = _fetch_links(site, page_url, schedule)
+    for i, page_url in enumerate(_page_urls(site, max_pages)):
+        try:
+            page = _fetch_links(site, page_url, schedule)
+        except Exception:
+            if i == 0:
+                raise
+            break
         if not page:
             break
         fresh = [u for u in page if u not in seen]

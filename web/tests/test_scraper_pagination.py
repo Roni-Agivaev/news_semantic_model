@@ -13,6 +13,9 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import scraper  # noqa: E402
+from curl_cffi import requests as curl_requests  # noqa: E402
+
+HTTP_ERROR = curl_requests.exceptions.HTTPError
 
 WALK_BUDGET_S = 75.0  # one site's whole category walk, against the cron's 300 s
 
@@ -121,6 +124,20 @@ class WalkTest(unittest.TestCase):
             self.slept, WALK_BUDGET_S,
             msg=f"walking 3 cold pages burned {self.slept:.0f}s (budget {WALK_BUDGET_S:.0f}s)")
 
+
+    def test_a_broken_page_two_keeps_page_ones_links(self):
+        """A site changing its pagination scheme must degrade to page 1, not fail."""
+        site = FakeSite({PAGE_1: section_page("a1", "a2"),
+                         page_n(2): HTTP_ERROR("404")})
+        links = self.walk(site, max_pages=3)
+        self.assertEqual(links, article_urls("a1", "a2"))
+        self.assertEqual(site.pages_seen, [PAGE_1, page_n(2)])
+
+    def test_page_one_failure_still_raises(self):
+        """ingest_site relies on this to record a 'category page' error."""
+        site = FakeSite({PAGE_1: HTTP_ERROR("403")})
+        with self.assertRaises(HTTP_ERROR):
+            self.walk(site, max_pages=3)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
