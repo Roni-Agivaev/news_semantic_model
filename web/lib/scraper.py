@@ -58,6 +58,20 @@ SITES = {
 
 MIN_CONTENT_CHARS = 50
 
+# i24 answers a cold edge-cache miss with a ~7 KB JavaScript shell and serves the
+# rendered page only 10-15 s later (measured 2026-11-06: the section page was still
+# a shell at 0/3/6 s and complete at 10 s; articles first parsed at 1 s, 11 s, 15.6 s).
+# Every attempt inside that window gets the same shell, so the retries have to span it.
+RETRY_AT_S = (0, 5, 10, 15, 20)  # when each attempt starts, seconds from the first
+
+
+def _attempts(schedule=RETRY_AT_S):
+    """Yield once per attempt, sleeping so attempt n starts schedule[n] seconds in."""
+    for i, at in enumerate(schedule):
+        if i:
+            time.sleep(at - schedule[i - 1])
+        yield at
+
 
 def fetch(url, timeout=20):
     resp = requests.get(url, impersonate="chrome", timeout=timeout)
@@ -65,16 +79,14 @@ def fetch(url, timeout=20):
     return resp.text
 
 
-def get_links(source, attempts=3, retry_delay=3):
+def get_links(source, schedule=RETRY_AT_S):
     """Return the unique, absolute article URLs listed on a site's category page.
 
-    Like its article pages, i24's category page sometimes answers with an empty
-    JavaScript shell first, so a page with no links is fetched again."""
+    Like its article pages, i24's category page answers a cold cache with an empty
+    JavaScript shell, so a page with no links is fetched again across RETRY_AT_S."""
     site = SITES[source]
     links = []
-    for attempt in range(attempts):
-        if attempt:
-            time.sleep(retry_delay)
+    for _ in _attempts(schedule):
         html = fetch(site["category_url"])
         seen = set()
         for path in re.findall(site["link_pattern"], html):
@@ -185,17 +197,15 @@ def parse_article(html):
     return {"title": title, "content": content, "published_at": parse_date(published)}
 
 
-def scrape_article(source, url, attempts=3, retry_delay=3, fallback=None):
+def scrape_article(source, url, schedule=RETRY_AT_S, fallback=None):
     """Fetch and parse one article. Returns a dict, or None if it isn't usable.
 
     i24 answers a cache miss with an empty JavaScript shell and only serves the
-    rendered article a few seconds later, so an empty result is retried.
+    rendered article 10-15 s later, so an empty result is retried across RETRY_AT_S.
 
     If the page can't be read and `fallback` (sitemap title/date) is given, a
     title-only article with empty content is returned instead."""
-    for attempt in range(attempts):
-        if attempt:
-            time.sleep(retry_delay)
+    for _ in _attempts(schedule):
         try:
             article = parse_article(fetch(url))
         except requests.exceptions.HTTPError:
