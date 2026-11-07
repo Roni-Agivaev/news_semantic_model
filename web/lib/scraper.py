@@ -38,6 +38,7 @@ SITES = {
         "category_url": "https://13tv.co.il/news/politics/security/",
         "link_pattern": r"/item/news/politics/security/[A-Za-z0-9\-]+/?",
         "base": "https://13tv.co.il",
+        "page_url": "https://13tv.co.il/news/politics/security/page/{n}/",
     },
     "Channel 14": {
         "category_url": "https://www.c14.co.il/archive/990",
@@ -48,11 +49,13 @@ SITES = {
         "category_url": "https://www.i24news.tv/he/news/news/defense-news",
         "link_pattern": r"/he/news/news/defense-news/artc-[A-Za-z0-9]+",
         "base": "https://www.i24news.tv",
+        "page_url": "https://www.i24news.tv/he/news/news/defense-news?page={n}",
     },
     "Channel 12": {
         "category_url": "https://www.mako.co.il/news-military",
         "link_pattern": r"/news-military/[A-Za-z0-9_/\-]*Article-[A-Za-z0-9]+\.htm",
         "base": "https://www.mako.co.il",
+        "page_url": "https://www.mako.co.il/news-military?page={n}",
     },
 }
 
@@ -63,6 +66,11 @@ MIN_CONTENT_CHARS = 50
 # a shell at 0/3/6 s and complete at 10 s; articles first parsed at 1 s, 11 s, 15.6 s).
 # Every attempt inside that window gets the same shell, so the retries have to span it.
 RETRY_AT_S = (0, 5, 10, 15, 20)  # when each attempt starts, seconds from the first
+
+# How many pages of a section the daily cron walks. About 15-18 days of history
+# at the measured 5-6 days per page, so a two-week outage heals itself. This is a
+# choice about unattended recovery, not a measured value; web/backfill.py goes deeper.
+MAX_PAGES = 3
 
 
 def _attempts(schedule=RETRY_AT_S):
@@ -79,24 +87,55 @@ def fetch(url, timeout=20):
     return resp.text
 
 
-def get_links(source, schedule=RETRY_AT_S):
-    """Return the unique, absolute article URLs listed on a site's category page.
+def _page_urls(site, max_pages):
+    """The section's page 1, then its paginated siblings if it has any."""
+    yield site["category_url"]
+    template = site.get("page_url")
+    if template:
+        for n in range(2, max_pages + 1):
+            yield template.format(n=n)
 
-    Like its article pages, i24's category page answers a cold cache with an empty
-    JavaScript shell, so a page with no links is fetched again across RETRY_AT_S."""
-    site = SITES[source]
-    links = []
+
+def _links_on_page(site, html):
+    """The absolute article URLs matching this site's pattern, in page order."""
+    urls, seen = [], set()
+    for path in re.findall(site["link_pattern"], html):
+        # strip a full domain if the regex matched inside an absolute href
+        url = site["base"] + path if path.startswith("/") else path
+        if url not in seen:
+            seen.add(url)
+            urls.append(url)
+    return urls
+
+
+def _fetch_links(site, page_url, schedule):
+    """Fetch one section page, retrying while it has no links.
+
+    i24 answers a cold cache with an empty JavaScript shell, so a page without
+    links is fetched again across `schedule` rather than taken for the end of
+    the section."""
     for _ in _attempts(schedule):
-        html = fetch(site["category_url"])
-        seen = set()
-        for path in re.findall(site["link_pattern"], html):
-            # strip a full domain if the regex matched inside an absolute href
-            url = site["base"] + path if path.startswith("/") else path
-            if url not in seen:
-                seen.add(url)
-                links.append(url)
+        links = _links_on_page(site, fetch(page_url))
         if links:
+            return links
+    return []
+
+
+def get_links(source, schedule=RETRY_AT_S, known=None, max_pages=MAX_PAGES):
+    """Return the unique, absolute article URLs listed in a site's section.
+
+    Sites with a `page_url` are walked page by page, up to `max_pages`; the rest
+    read their category page alone. The walk also stops on the first page with
+    no links at all."""
+    site = SITES[source]
+    links, seen = [], set()
+    for page_url in _page_urls(site, max_pages):
+        page = _fetch_links(site, page_url, schedule)
+        if not page:
             break
+        fresh = [u for u in page if u not in seen]
+        seen.update(fresh)
+        links += fresh
     return links
 
 
