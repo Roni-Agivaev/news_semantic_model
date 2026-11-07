@@ -9,7 +9,7 @@ No ML model runs here: the model is a separate step.
 | Site | Category page | Pages walked |
 |---|---|---|
 | Ynet | ynet.co.il/news/category/344 | 1 (no pagination) |
-| Kan News | kan.org.il/content/kan-news/defense/ | 1 (no pagination) |
+| Kan News | kan.org.il/content/kan-news/defense/ | up to `MAX_PAGES` |
 | Channel 13 | 13tv.co.il/news/politics/security/ | up to `MAX_PAGES` |
 | Channel 14 | c14.co.il/archive/990 | 1 (no pagination) |
 | I24 NEWS | i24news.tv/he/news/news/defense-news | up to `MAX_PAGES` |
@@ -20,7 +20,7 @@ No ML model runs here: the model is a separate step.
 - `lib/scraper.py`: plain HTTP scrapers (no browser). `curl_cffi` imitates Chrome,
   which gets past Channel 13's and Mako's bot checks. Title, body and publish date
   come from each article's schema.org `NewsArticle` data.
-- Three sections paginate (Channel 13, Channel 12, i24), so `get_links` walks them
+- Four sections paginate (Channel 13, Channel 12, i24, Kan), so `get_links` walks them
   page by page, up to `MAX_PAGES` (3, about 15-18 days of history). It stops early
   once a page holds nothing that is not already stored, so a normal run costs one
   or two extra page fetches and a run after an outage walks deeper by itself.

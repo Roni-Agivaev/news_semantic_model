@@ -167,5 +167,18 @@ class WalkTest(unittest.TestCase):
         self.assertEqual(site.pages_seen, [PAGE_1, page_n(2)])
         self.assertEqual(links, article_urls("a1", "a2"))
 
+    def test_kan_walks_its_paginated_section(self):
+        """Kan's defense section takes ?page=N, about a week per page (measured
+        2026-11-07: page 30 still full); it was being read one page deep."""
+        base = "https://www.kan.org.il/content/kan-news/defense/"
+        kan = FakeSite({
+            base: '<html><body><a href="/content/kan-news/defense/1001/">x</a></body></html>',
+            base + "?page=2": '<html><body><a href="/content/kan-news/defense/1002/">x</a></body></html>',
+        })
+        with mock.patch.object(scraper, "fetch", kan.fetch):
+            links = scraper.get_links("Kan News", max_pages=2)
+        self.assertEqual(links, ["https://www.kan.org.il/content/kan-news/defense/1001/",
+                                 "https://www.kan.org.il/content/kan-news/defense/1002/"])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -28,6 +28,7 @@ SITES = {
         "category_url": "https://www.kan.org.il/content/kan-news/defense/",
         "link_pattern": r"/content/kan-news/defense/\d+/?",
         "base": "https://www.kan.org.il",
+        "page_url": "https://www.kan.org.il/content/kan-news/defense/?page={n}",
         # Google News sitemap: lists new articles with title and date.
         "sitemap_url": "https://www.kan.org.il/media/sitemap/news/sitemap.xml",
         # Kan's Cloudflare returns 403 to Vercel's IPs, sitemap included, so the
