@@ -11,6 +11,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+from api.articles import handler as ArticlesHandler  # noqa: E402
 from api.cron import handler as CronHandler  # noqa: E402
 from api.login import handler as LoginHandler  # noqa: E402
 from api.stats import handler as StatsHandler  # noqa: E402
@@ -29,6 +30,8 @@ class DevHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/api/stats"):
             return delegate(self, StatsHandler, "do_GET")
+        if self.path.startswith("/api/articles"):
+            return delegate(self, ArticlesHandler, "do_GET")
         return super().do_GET()
 
     def do_POST(self):
