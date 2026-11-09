@@ -226,6 +226,13 @@ def _news_article_ld(soup):
     return {}
 
 
+def clean_text(text):
+    """Decode HTML entities that some sites leave encoded inside JSON-LD
+    (Channel 13 sends &quot; and &#039; in articleBody) and turn non-breaking
+    spaces into plain ones."""
+    return html_lib.unescape(text).replace("\xa0", " ").strip()
+
+
 def parse_article(html):
     """Extract title, content and published date from an article page."""
     soup = BeautifulSoup(html, "html.parser")
@@ -236,14 +243,14 @@ def parse_article(html):
     if h1 and h1.get_text(strip=True):
         title = h1.get_text(strip=True)
     elif ld.get("headline"):
-        title = ld["headline"].strip()
+        title = clean_text(ld["headline"])
     else:
         og = soup.find("meta", property="og:title")
         if og and og.get("content"):
             title = og["content"].strip()
 
     # Prefer the article body the site itself declares; fall back to paragraphs.
-    content = (ld.get("articleBody") or "").strip()
+    content = clean_text(ld.get("articleBody") or "")
     if len(content) < MIN_CONTENT_CHARS:
         paragraphs = [p.get_text(" ", strip=True) for p in soup.find_all("p")]
         content = " ".join(p for p in paragraphs if len(p) > 15)
