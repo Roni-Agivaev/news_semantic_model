@@ -56,7 +56,7 @@ def main():
     load_env()
     print(f"walking {len(sources)} site(s), up to {args.max_pages} pages each; "
           f"this takes many minutes", flush=True)
-    print(json.dumps(run_ingest(sources, max_pages=args.max_pages, stop_at_known=False),
+    print(json.dumps(run_ingest(sources, max_pages=args.max_pages, stop_at_known=False, trigger="backfill"),
                      ensure_ascii=False, indent=2))
 
 

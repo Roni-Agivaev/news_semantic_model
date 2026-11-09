@@ -110,7 +110,7 @@ $("ingest-btn").addEventListener("click", async () => {
   const btn = $("ingest-btn"), box = $("ingest-result");
   btn.disabled = true; btn.textContent = "Ingesting…";
   box.hidden = false; box.className = "notice";
-  box.innerHTML = `<div class="head">Ingesting…</div>Scraping 5 sites now. This takes about 10 to 60 seconds.`;
+  box.innerHTML = `<div class="head">Ingesting…</div>Scraping 5 sites now. This takes about 10 to 60 seconds. <a href="/logs" target="_blank">Watch it live in Logs ↗</a>`;
   const t0 = Date.now();
   try {
     const r = await fetch("/api/cron", { method: "POST" });
@@ -125,7 +125,7 @@ $("ingest-btn").addEventListener("click", async () => {
       : `${esc(s.source)} +${s.new_articles} <span class="muted">(${s.links_found} links${s.failed ? `, ${s.failed} skipped` : ""})</span>`);
     box.className = "notice " + (bad.length ? "bad" : "ok");
     box.innerHTML = `<button class="link-btn close" type="button" onclick="this.parentElement.hidden=true">Close</button>
-      <div class="head">${bad.length ? "⚠" : "✓"} Done in ${secs} s: ${fmt(res.new_articles)} new article${res.new_articles === 1 ? "" : "s"}</div>
+      <div class="head">${bad.length ? "⚠" : "✓"} Done in ${secs} s: ${fmt(res.new_articles)} new article${res.new_articles === 1 ? "" : "s"}${res.run_id ? ` · <a href="/logs?run=${esc(res.run_id)}">see the log</a>` : ""}</div>
       <div>${parts.join(" · ")}</div>
       ${bad.map(s => `<div class="muted">${esc(s.source)}: ${esc(s.error)}</div>`).join("")}
       ${res.kan ? `<div class="muted">Kan News: ${esc(res.kan.message)}</div>` : ""}`;
@@ -506,7 +506,7 @@ function renderRuns(runs) {
   $("runs").innerHTML = `<table>
     <thead><tr><th>Time</th><th class="left">Site</th><th class="left">Result</th><th>Links</th><th>New</th><th>Failed</th><th class="left">Error</th></tr></thead>
     <tbody>${shown.map(r => `<tr>
-      <td title="${esc(fmtTime(r.ran_at))}">${shortTime(r.ran_at)}</td>
+      <td title="${esc(fmtTime(r.ran_at))}">${r.run_id ? `<a class="run-link" href="/logs?run=${esc(r.run_id)}" title="Open this run's log">${shortTime(r.ran_at)}</a>` : shortTime(r.ran_at)}</td>
       <td class="left">${siteLabel(r.source)}</td>
       <td class="left">${r.ok ? `<span class="ok-text">✓ OK</span>` : `<span class="bad-text">✕ Failed</span>`}</td>
       <td>${fmt(r.links_found)}</td>

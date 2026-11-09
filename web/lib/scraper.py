@@ -111,18 +111,29 @@ def _links_on_page(site, html):
 
 def _fetch_links(site, page_url, schedule):
     """Fetch one section page, retrying while it has no links.
+    Returns (links, attempts made).
 
     i24 answers a cold cache with an empty JavaScript shell, so a page without
     links is fetched again across `schedule` rather than taken for the end of
     the section."""
+    attempts = 0
     for _ in _attempts(schedule):
+        attempts += 1
         links = _links_on_page(site, fetch(page_url))
         if links:
-            return links
-    return []
+            return links, attempts
+    return [], attempts
 
 
-def get_links(source, schedule=RETRY_AT_S, known=None, max_pages=MAX_PAGES):
+def _reason(e):
+    """A short, readable cause for a failed fetch."""
+    status = getattr(getattr(e, "response", None), "status_code", None)
+    if status:
+        return f"HTTP {status}"
+    return f"{type(e).__name__}: {e}"[:200]
+
+
+def get_links(source, schedule=RETRY_AT_S, known=None, max_pages=MAX_PAGES, log=None):
     """Return the unique, absolute article URLs listed in a site's section.
 
     Sites with a `page_url` are walked page by page; the rest read their
@@ -139,17 +150,30 @@ def get_links(source, schedule=RETRY_AT_S, known=None, max_pages=MAX_PAGES):
 
     Page 1 is the section itself, so a failure there is raised for the caller to
     record. A later page that cannot be fetched only ends the walk, so broken
-    pagination degrades to reading page 1 instead of losing the site."""
+    pagination degrades to reading page 1 instead of losing the site.
+
+    `log`, if given, is called as log(level, step, message, url=None, **detail)
+    for every page read and for the reason the walk ended (lib/events.py)."""
+    log = log or _no_log
     site = SITES[source]
     links, seen = [], set()
+    paginated = bool(site.get("page_url"))
     for i, page_url in enumerate(_page_urls(site, max_pages)):
+        n = i + 1
+        started = time.monotonic()
         try:
-            page = _fetch_links(site, page_url, schedule)
-        except Exception:
+            page, attempts = _fetch_links(site, page_url, schedule)
+        except Exception as e:
             if i == 0:
                 raise
+            log("warn", "section", f"Page {n} failed ({_reason(e)}); keeping pages 1-{i}", url=page_url, page=n)
             break
+        seconds = round(time.monotonic() - started, 1)
         if not page:
+            level = "warn" if i == 0 else "info"
+            what = "no article links - the site may be blocking or showing an empty shell" if i == 0                 else "no links - end of the section"
+            log(level, "section", f"Page {n}: {what}", url=page_url,
+                page=n, links=0, attempts=attempts, seconds=seconds)
             break
         fresh = [u for u in page if u not in seen]
         seen.update(fresh)
@@ -157,9 +181,20 @@ def get_links(source, schedule=RETRY_AT_S, known=None, max_pages=MAX_PAGES):
         # Only `fresh` needs asking about: the rest of the page was already
         # collected earlier in this walk, so it is accounted for either way.
         stored = known(fresh) if known and fresh else set()
+        new = len([u for u in fresh if u not in stored])
+        log("info", "section", f"Page {n}: {len(page)} links, {new} not stored yet", url=page_url,
+            page=n, links=len(page), new=new, attempts=attempts, seconds=seconds)
         if all(u in stored for u in fresh):
+            if paginated:
+                log("info", "section", f"Stopped after page {n}: nothing new on it")
             break
+        if paginated and n == max_pages:
+            log("info", "section", f"Stopped at the page limit ({max_pages})")
     return links
+
+
+def _no_log(level, step, message, url=None, **detail):
+    pass
 
 
 def get_sitemap_entries(source):
@@ -266,26 +301,45 @@ def parse_article(html):
     return {"title": title, "content": content, "published_at": parse_date(published)}
 
 
-def scrape_article(source, url, schedule=RETRY_AT_S, fallback=None):
+def scrape_article(source, url, schedule=RETRY_AT_S, fallback=None, log=None):
     """Fetch and parse one article. Returns a dict, or None if it isn't usable.
 
     i24 answers a cache miss with an empty JavaScript shell and only serves the
     rendered article 10-15 s later, so an empty result is retried across RETRY_AT_S.
 
     If the page can't be read and `fallback` (sitemap title/date) is given, a
-    title-only article with empty content is returned instead."""
+    title-only article with empty content is returned instead.
+
+    `log` (see get_links) gets one event: scraped, title only, or failed with the reason."""
+    log = log or _no_log
+    started = time.monotonic()
+    attempts, reason = 0, "no attempt made"
     for _ in _attempts(schedule):
+        attempts += 1
         try:
             article = parse_article(fetch(url))
-        except requests.exceptions.HTTPError:
+        except requests.exceptions.HTTPError as e:
+            reason = _reason(e)
             break  # blocked or gone; retrying won't help
-        except Exception:
+        except Exception as e:
+            reason = _reason(e)
             continue  # timeout / connection error: retry
-        if article["title"] and len(article["content"]) >= MIN_CONTENT_CHARS:
+        if not article["title"]:
+            reason = "page has no title"
+        elif len(article["content"]) < MIN_CONTENT_CHARS:
+            reason = f"text too short ({len(article['content'])} chars)"
+        else:
             article["source"] = source
             article["url"] = url
+            log("info", "article", f"Scraped: {article['title']}", url=url,
+                attempts=attempts, seconds=round(time.monotonic() - started, 1),
+                chars=len(article["content"]))
             return article
+    seconds = round(time.monotonic() - started, 1)
     if fallback and fallback.get("title"):
+        log("warn", "article", f"Saved title only ({reason}): {fallback['title']}", url=url,
+            attempts=attempts, seconds=seconds)
         return {"source": source, "url": url, "title": fallback["title"], "content": "",
                 "published_at": fallback.get("published_at")}
+    log("error", "article", f"Failed: {reason}", url=url, attempts=attempts, seconds=seconds)
     return None

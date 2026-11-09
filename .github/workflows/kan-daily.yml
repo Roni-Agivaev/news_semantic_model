@@ -25,6 +25,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONIOENCODING: utf-8
+          RUN_TRIGGER: kan-action
         run: |
           python run_local.py "Kan News" | tee result.json
           python -c "import json,sys; s=json.load(open('result.json'))['sites'][0]; sys.exit(1 if s['error'] else 0)"

@@ -14,6 +14,7 @@ sys.path.insert(0, HERE)
 from api.articles import handler as ArticlesHandler  # noqa: E402
 from api.cron import handler as CronHandler  # noqa: E402
 from api.login import handler as LoginHandler  # noqa: E402
+from api.logs import handler as LogsHandler  # noqa: E402
 from api.stats import handler as StatsHandler  # noqa: E402
 from import_csv import load_env  # noqa: E402
 
@@ -32,6 +33,10 @@ class DevHandler(SimpleHTTPRequestHandler):
             return delegate(self, StatsHandler, "do_GET")
         if self.path.startswith("/api/articles"):
             return delegate(self, ArticlesHandler, "do_GET")
+        if self.path.startswith("/api/logs"):
+            return delegate(self, LogsHandler, "do_GET")
+        if self.path.split("?")[0] == "/logs":
+            self.path = "/logs.html" + self.path[len("/logs"):]
         return super().do_GET()
 
     def do_POST(self):

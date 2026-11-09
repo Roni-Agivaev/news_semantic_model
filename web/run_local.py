@@ -15,4 +15,6 @@ from lib.ingest import run_ingest  # noqa: E402
 
 if __name__ == "__main__":
     load_env()
-    print(json.dumps(run_ingest(sys.argv[1:] or None), ensure_ascii=False, indent=2))
+    # RUN_TRIGGER names this run on the /logs page (the Kan workflow sets kan-action)
+    trigger = os.environ.get("RUN_TRIGGER", "local")
+    print(json.dumps(run_ingest(sys.argv[1:] or None, trigger=trigger), ensure_ascii=False, indent=2))

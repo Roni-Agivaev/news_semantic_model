@@ -29,18 +29,18 @@ class handler(BaseHTTPRequestHandler):
         given = self.headers.get("Authorization", "")
         if not secret or not hmac.compare_digest(given, f"Bearer {secret}"):
             return self._send(401, {"error": "unauthorized"})
-        self._run()
+        self._run(trigger="cron")
 
     def do_POST(self):
         if not auth.is_logged_in(self.headers):
             return self._send(401, {"error": "login required"})
         # Start Kan first: GitHub needs a minute to spin up, so it runs while we scrape.
         kan_started, kan_message = start_kan_workflow()
-        self._run(extra={"kan": {"started": kan_started, "message": kan_message}})
+        self._run(trigger="manual", extra={"kan": {"started": kan_started, "message": kan_message}})
 
-    def _run(self, extra=None):
+    def _run(self, trigger, extra=None):
         try:
-            result = run_ingest(SERVER_SOURCES)
+            result = run_ingest(SERVER_SOURCES, trigger=trigger)
         except Exception as e:
             return self._send(500, {"error": f"{type(e).__name__}: {e}", **(extra or {})})
         self._send(200, {**result, **(extra or {})})

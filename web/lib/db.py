@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 from .health import site_status
 
@@ -42,10 +43,43 @@ CREATE INDEX IF NOT EXISTS ingest_runs_source_ran_at ON ingest_runs (source, ran
 -- articles saved with title/date only because the page itself was blocked
 ALTER TABLE ingest_runs ADD COLUMN IF NOT EXISTS title_only INTEGER NOT NULL DEFAULT 0;
 
+-- the scrape run (scrape_runs.id) each per-site summary belongs to
+ALTER TABLE ingest_runs ADD COLUMN IF NOT EXISTS run_id TEXT;
+
+-- One row per scrape run (all sites together), and its step-by-step events,
+-- written by lib/events.py and shown on the /logs page. Kept for EVENT_DAYS.
+CREATE TABLE IF NOT EXISTS scrape_runs (
+    id           TEXT PRIMARY KEY,
+    trigger      TEXT NOT NULL,
+    sources      TEXT[] NOT NULL,
+    started_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at  TIMESTAMPTZ,
+    status       TEXT NOT NULL DEFAULT 'running',   -- running / ok / warn / error
+    new_articles INTEGER,
+    summary      JSONB
+);
+CREATE INDEX IF NOT EXISTS scrape_runs_started_at ON scrape_runs (started_at DESC);
+
+CREATE TABLE IF NOT EXISTS ingest_events (
+    id      BIGSERIAL PRIMARY KEY,
+    run_id  TEXT NOT NULL,
+    at      TIMESTAMPTZ NOT NULL,
+    source  TEXT,
+    level   TEXT NOT NULL,     -- info / warn / error
+    step    TEXT NOT NULL,
+    message TEXT NOT NULL,
+    url     TEXT,
+    detail  JSONB
+);
+CREATE INDEX IF NOT EXISTS ingest_events_run ON ingest_events (run_id, at, id);
+CREATE INDEX IF NOT EXISTS ingest_events_at ON ingest_events (at);
+
 -- Supabase exposes the public schema over its REST API; RLS with no policies
 -- blocks that path. Our direct Postgres connection is unaffected.
 ALTER TABLE articles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingest_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scrape_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ingest_events ENABLE ROW LEVEL SECURITY;
 """
 
 _schema_ready = False
@@ -60,16 +94,20 @@ def connect():
     return conn
 
 
-# True when the tables, the newest column and row-level security are all in place.
+# True when the tables, the newest columns and row-level security are all in place.
 # A plain catalog read: it takes no table locks.
 SCHEMA_CHECK = """
 SELECT (SELECT count(*) FROM pg_class
-        WHERE oid IN (to_regclass('public.articles'), to_regclass('public.ingest_runs'))
-          AND relrowsecurity) = 2
-   AND EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_schema = 'public' AND table_name = 'ingest_runs'
-                 AND column_name = 'title_only') AS ready
+        WHERE oid IN (to_regclass('public.articles'), to_regclass('public.ingest_runs'),
+                      to_regclass('public.scrape_runs'), to_regclass('public.ingest_events'))
+          AND relrowsecurity) = 4
+   AND (SELECT count(*) FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'ingest_runs'
+          AND column_name IN ('title_only', 'run_id')) = 2 AS ready
 """
+
+EVENT_DAYS = 30            # how long run logs are kept
+UNFINISHED_AFTER_MIN = 15  # a run silent this long without finishing was cut off
 
 
 def ensure_schema(conn):
@@ -128,13 +166,91 @@ def insert_articles(conn, articles, origin="scraper"):
     return inserted
 
 
-def log_run(conn, source, links_found, new_articles, failed, title_only=0, error=None):
+def log_run(conn, source, links_found, new_articles, failed, title_only=0, error=None, run_id=None):
     conn.execute(
-        """INSERT INTO ingest_runs (source, links_found, new_articles, failed, title_only, error)
-           VALUES (%s, %s, %s, %s, %s, %s)""",
-        (source, links_found, new_articles, failed, title_only, error),
+        """INSERT INTO ingest_runs (source, links_found, new_articles, failed, title_only, error, run_id)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+        (source, links_found, new_articles, failed, title_only, error, run_id),
     )
     conn.commit()
+
+
+# ---------- run logs (lib/events.py writes, /api/logs reads) ----------
+
+def start_scrape_run(conn, run_id, trigger, sources):
+    conn.execute("INSERT INTO scrape_runs (id, trigger, sources) VALUES (%s, %s, %s)",
+                 (run_id, trigger, list(sources)))
+    conn.commit()
+
+
+def add_events(conn, events):
+    with conn.cursor() as cur:
+        cur.executemany(
+            """INSERT INTO ingest_events (run_id, at, source, level, step, message, url, detail)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            [(e["run_id"], e["at"], e["source"], e["level"], e["step"], e["message"].replace("\x00", ""),
+              e["url"], Jsonb(e["detail"]) if e["detail"] else None) for e in events],
+        )
+    conn.commit()
+
+
+def finish_scrape_run(conn, run_id, status, new_articles, summary):
+    conn.execute(
+        """UPDATE scrape_runs SET finished_at = now(), status = %s, new_articles = %s, summary = %s
+           WHERE id = %s""",
+        (status, new_articles, Jsonb(summary) if summary else None, run_id),
+    )
+    # Housekeeping: old logs go, so the tables stay small
+    conn.execute("DELETE FROM ingest_events WHERE at < now() - make_interval(days => %s)", (EVENT_DAYS,))
+    conn.execute("DELETE FROM scrape_runs WHERE started_at < now() - make_interval(days => %s)", (EVENT_DAYS,))
+    conn.commit()
+
+
+# A run that never reported back (function timed out, runner killed) and has
+# been silent for UNFINISHED_AFTER_MIN shows as 'unfinished' instead of 'running'.
+_RUN_COLUMNS = """
+    r.id, r.trigger, r.sources, r.started_at, r.finished_at, r.new_articles, r.summary,
+    CASE WHEN r.finished_at IS NULL
+              AND greatest(r.started_at, e.last_at) < now() - make_interval(mins => %(stale)s)
+         THEN 'unfinished' ELSE r.status END AS status,
+    coalesce(e.info, 0) AS info, coalesce(e.warn, 0) AS warn, coalesce(e.error, 0) AS error,
+    e.last_at,
+    extract(epoch FROM coalesce(r.finished_at, greatest(r.started_at, e.last_at)) - r.started_at)::float AS seconds
+"""
+_RUN_EVENTS = """
+    LEFT JOIN LATERAL (
+        SELECT count(*) FILTER (WHERE level = 'info')  AS info,
+               count(*) FILTER (WHERE level = 'warn')  AS warn,
+               count(*) FILTER (WHERE level = 'error') AS error,
+               max(at) AS last_at
+        FROM ingest_events WHERE run_id = r.id) e ON true
+"""
+
+
+def list_scrape_runs(conn, limit=60):
+    rows = conn.execute(
+        f"SELECT {_RUN_COLUMNS} FROM scrape_runs r {_RUN_EVENTS} ORDER BY r.started_at DESC LIMIT %(limit)s",
+        {"stale": UNFINISHED_AFTER_MIN, "limit": limit},
+    ).fetchall()
+    conn.commit()
+    return rows
+
+
+def get_scrape_run(conn, run_id, max_events=5000):
+    """The run and its events, oldest first. None if there is no such run."""
+    run = conn.execute(
+        f"SELECT {_RUN_COLUMNS} FROM scrape_runs r {_RUN_EVENTS} WHERE r.id = %(id)s",
+        {"stale": UNFINISHED_AFTER_MIN, "id": run_id},
+    ).fetchone()
+    events = []
+    if run:
+        events = conn.execute(
+            """SELECT id, at, source, level, step, message, url, detail
+               FROM ingest_events WHERE run_id = %s ORDER BY at, id LIMIT %s""",
+            (run_id, max_events),
+        ).fetchall()
+    conn.commit()
+    return {"run": run, "events": events} if run else None
 
 
 def stats(conn, by="ingested", days=30, coverage_days=90):
@@ -210,7 +326,7 @@ def stats(conn, by="ingested", days=30, coverage_days=90):
 
           -- Every site's recent runs in one log, newest first
           'runs', (SELECT coalesce(json_agg(r ORDER BY r.ran_at DESC), '[]') FROM (
-              SELECT ran_at, source, ok, links_found, new_articles, failed, title_only, error
+              SELECT ran_at, source, ok, links_found, new_articles, failed, title_only, error, run_id
               FROM runs ORDER BY ran_at DESC LIMIT 80) r),
 
           -- Articles per site per publish day, for the coverage heatmap
