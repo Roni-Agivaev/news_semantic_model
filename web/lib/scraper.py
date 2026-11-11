@@ -68,6 +68,11 @@ MIN_CONTENT_CHARS = 50
 # Every attempt inside that window gets the same shell, so the retries have to span it.
 RETRY_AT_S = (0, 5, 10, 15, 20)  # when each attempt starts, seconds from the first
 
+# Section pages get a longer window: i24's section page needed 10 s and 20 s on the
+# 2026-11-09 runs and was still a shell after 20 s on 2026-11-10. Articles keep the
+# shorter one, since 4 run in parallel and each bad article would wait the full window.
+SECTION_RETRY_AT_S = (0, 5, 10, 15, 20, 30, 40)
+
 # How many pages of a section the daily cron walks. About 15-18 days of history
 # at the measured 5-6 days per page, so a two-week outage heals itself. This is a
 # choice about unattended recovery, not a measured value; web/backfill.py goes deeper.
@@ -133,7 +138,7 @@ def _reason(e):
     return f"{type(e).__name__}: {e}"[:200]
 
 
-def get_links(source, schedule=RETRY_AT_S, known=None, max_pages=MAX_PAGES, log=None):
+def get_links(source, schedule=SECTION_RETRY_AT_S, known=None, max_pages=MAX_PAGES, log=None):
     """Return the unique, absolute article URLs listed in a site's section.
 
     Sites with a `page_url` are walked page by page; the rest read their

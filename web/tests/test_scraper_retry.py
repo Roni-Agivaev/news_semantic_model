@@ -80,6 +80,17 @@ class ColdCacheRetryTest(unittest.TestCase):
             msg=f"category page never read: {self._report()}",
         )
 
+    def test_get_links_recovers_category_page_that_renders_after_30s(self):
+        """Cron 2026-11-10: i24's section page was still a shell after 5 attempts
+        over 20 s (the night before it took 10 s and 20 s). Section pages get a
+        longer window than articles."""
+        fetch = lambda url, timeout=20: (  # noqa: E731
+            CATEGORY_FULL if self.clock.now >= 30 else CATEGORY_SHELL)
+        with mock.patch.object(scraper, "fetch", fetch):
+            links = scraper.get_links("I24 NEWS")
+        self.assertEqual(len(links), 2, msg=f"gave up at t={self.clock.now:.0f}s")
+        self.assertLessEqual(self.clock.now, TIME_BUDGET_S)
+
     def test_scrape_article_recovers_article_that_renders_after_12s(self):
         url = "https://www.i24news.tv/he/news/news/defense-news/artc-aaa111"
         fetch = self.clock.page(ARTICLE_SHELL, ARTICLE_FULL)
