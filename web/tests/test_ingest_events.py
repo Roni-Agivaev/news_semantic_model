@@ -21,10 +21,13 @@ class FakeDb:
     def connect(self):
         return mock.Mock()
 
-    def existing_urls(self, conn, urls):
+    def existing_urls(self, conn, urls, topic="defense"):
+        self.topics = getattr(self, "topics", set()) | {topic}
         return {u for u in urls if u in self.stored}
 
-    def insert_articles(self, conn, articles):
+    def insert_articles(self, conn, articles, topic="defense"):
+        self.inserted = list(articles)
+        self.topics = getattr(self, "topics", set()) | {topic}
         return len(articles)
 
     def log_run(self, conn, **kw):
@@ -42,19 +45,19 @@ class Recorder:
         return "\n".join(m for _, _, m in self.events)
 
 
-def article(url):
-    return {"source": "Ynet", "url": url, "title": url, "content": "x" * 100, "published_at": None}
+def article(url, published_at=None):
+    return {"source": "Ynet", "url": url, "title": url, "content": "x" * 100, "published_at": published_at}
 
 
 class IngestEventsTest(unittest.TestCase):
-    def run_site(self, links=None, links_error=None, scraped=None, stored=()):
+    def run_site(self, links=None, links_error=None, scraped=None, stored=(), topic="defense", since=None):
         fake = FakeDb(stored)
         log = Recorder()
 
-        def get_links(source, known=None, max_pages=None, log=None):
+        def get_links(topic_, source, known=None, max_pages=None, log=None):
             if links_error:
                 raise links_error
-            return list(links)
+            return [(u, "domestic" if topic_ == "politics" else "defense") for u in links]
 
         def scrape_article(source, url, fallback=None, log=None):
             return scraped(url) if scraped else article(url)
@@ -62,7 +65,7 @@ class IngestEventsTest(unittest.TestCase):
         with mock.patch.object(ingest, "db", fake), \
              mock.patch.object(ingest, "get_links", get_links), \
              mock.patch.object(ingest, "scrape_article", scrape_article):
-            result = ingest.ingest_site("Ynet", log=log, run_id="r1")
+            result = ingest.ingest_site(topic, "Ynet", log=log, run_id="r1", since=since)
         return result, log, fake
 
     def test_counts_and_summary_are_narrated(self):
@@ -91,6 +94,24 @@ class IngestEventsTest(unittest.TestCase):
     def test_nothing_to_scrape_says_so(self):
         _, log, _ = self.run_site(links=["u1"], stored={"u1"})
         self.assertIn("0 to scrape", log.text())
+
+
+class TopicTest(IngestEventsTest):
+    def test_articles_carry_their_section_and_go_to_the_topic(self):
+        _, _, fake = self.run_site(links=["u1"], topic="politics")
+        self.assertEqual(fake.inserted[0]["section"], "domestic")
+        self.assertEqual(fake.topics, {"politics"})
+        self.assertEqual(fake.runs[0]["topic"], "politics")
+
+    def test_since_drops_older_articles(self):
+        from datetime import datetime, timezone
+        old = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        new = datetime(2026, 11, 1, tzinfo=timezone.utc)
+        _, log, fake = self.run_site(links=["u1", "u2"],
+                                     scraped=lambda u: article(u, old if u == "u1" else new),
+                                     since=datetime(2026, 8, 17, tzinfo=timezone.utc))
+        self.assertEqual([a["url"] for a in fake.inserted], ["u2"])
+        self.assertIn("Skipped 1 published before 2026-08-17", log.text())
 
 
 if __name__ == "__main__":

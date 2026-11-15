@@ -24,7 +24,9 @@ from urllib.parse import urlparse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from lib import db  # noqa: E402
-from lib.scraper import SITES, parse_date  # noqa: E402
+from lib.scraper import SITES as ALL_SITES, parse_date  # noqa: E402
+
+SITES = ALL_SITES["defense"]  # the CSV archives are defense articles
 
 # Old names used in earlier CSVs -> the names the scrapers use now (see pipeline/fixes.py)
 SOURCE_ALIASES = {

@@ -15,6 +15,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib import scraper  # noqa: E402
 from curl_cffi import requests as curl_requests  # noqa: E402
 
+def links_of(*args, **kwargs):
+    """get_links' URLs without their section tags."""
+    return [u for u, _ in scraper.get_links(*args, **kwargs)]
+
+
 HTTP_ERROR = curl_requests.exceptions.HTTPError
 
 WALK_BUDGET_S = 75.0  # one site's whole category walk, against the cron's 300 s
@@ -79,7 +84,7 @@ class WalkTest(unittest.TestCase):
 
     def walk(self, site, **kwargs):
         with mock.patch.object(scraper, "fetch", site.fetch):
-            return scraper.get_links(SOURCE, **kwargs)
+            return links_of("defense", SOURCE, **kwargs)
 
     def test_walks_every_page_of_a_paginated_section(self):
         site = FakeSite({
@@ -107,7 +112,7 @@ class WalkTest(unittest.TestCase):
         ynet = FakeSite({"https://www.ynet.co.il/news/category/344":
                          '<html><body><a href="/news/article/abc123">x</a></body></html>'})
         with mock.patch.object(scraper, "fetch", ynet.fetch):
-            links = scraper.get_links("Ynet", max_pages=5)
+            links = links_of("defense", "Ynet", max_pages=5)
         self.assertEqual(links, ["https://www.ynet.co.il/news/article/abc123"])
         self.assertEqual(ynet.pages_seen, ["https://www.ynet.co.il/news/category/344"])
 
@@ -176,7 +181,7 @@ class WalkTest(unittest.TestCase):
             base + "?page=2": '<html><body><a href="/content/kan-news/defense/1002/">x</a></body></html>',
         })
         with mock.patch.object(scraper, "fetch", kan.fetch):
-            links = scraper.get_links("Kan News", max_pages=2)
+            links = links_of("defense", "Kan News", max_pages=2)
         self.assertEqual(links, ["https://www.kan.org.il/content/kan-news/defense/1001/",
                                  "https://www.kan.org.il/content/kan-news/defense/1002/"])
 

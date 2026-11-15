@@ -18,6 +18,11 @@ from lib import scraper  # noqa: E402
 RENDER_AFTER_S = 12.0  # within the measured 10-15 s window
 TIME_BUDGET_S = 45.0   # one page must not eat the cron's 300 s budget
 
+def links_of(*args, **kwargs):
+    """get_links' URLs without their section tags."""
+    return [u for u, _ in scraper.get_links(*args, **kwargs)]
+
+
 CATEGORY_SHELL = "<html><head><title>i24</title></head><body><div id=root></div></body></html>"
 CATEGORY_FULL = (
     "<html><body>"
@@ -72,7 +77,7 @@ class ColdCacheRetryTest(unittest.TestCase):
     def test_get_links_recovers_category_page_that_renders_after_12s(self):
         fetch = self.clock.page(CATEGORY_SHELL, CATEGORY_FULL)
         with mock.patch.object(scraper, "fetch", fetch):
-            links = scraper.get_links("I24 NEWS")
+            links = links_of("defense", "I24 NEWS")
         self.assertEqual(
             links,
             ["https://www.i24news.tv/he/news/news/defense-news/artc-aaa111",
@@ -87,7 +92,7 @@ class ColdCacheRetryTest(unittest.TestCase):
         fetch = lambda url, timeout=20: (  # noqa: E731
             CATEGORY_FULL if self.clock.now >= 30 else CATEGORY_SHELL)
         with mock.patch.object(scraper, "fetch", fetch):
-            links = scraper.get_links("I24 NEWS")
+            links = links_of("defense", "I24 NEWS")
         self.assertEqual(len(links), 2, msg=f"gave up at t={self.clock.now:.0f}s")
         self.assertLessEqual(self.clock.now, TIME_BUDGET_S)
 

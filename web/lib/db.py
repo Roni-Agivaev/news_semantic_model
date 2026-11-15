@@ -74,8 +74,32 @@ CREATE TABLE IF NOT EXISTS ingest_events (
 CREATE INDEX IF NOT EXISTS ingest_events_run ON ingest_events (run_id, at, id);
 CREATE INDEX IF NOT EXISTS ingest_events_at ON ingest_events (at);
 
+-- Topics (2026-11-15): defense articles stay in `articles`, politics goes to
+-- `political_articles` (same shape). `section` says which section of the
+-- outlet listed the article; runs record the topic they scraped.
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS section TEXT NOT NULL DEFAULT 'defense';
+CREATE TABLE IF NOT EXISTS political_articles (
+    id           BIGSERIAL PRIMARY KEY,
+    source       TEXT NOT NULL,
+    url          TEXT NOT NULL UNIQUE,
+    title        TEXT NOT NULL,
+    content      TEXT,
+    published_at TIMESTAMPTZ,
+    ingested_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    origin       TEXT NOT NULL DEFAULT 'scraper',
+    score        REAL,
+    section      TEXT NOT NULL DEFAULT 'combined'   -- domestic / diplomatic / combined
+);
+CREATE UNIQUE INDEX IF NOT EXISTS political_articles_source_title ON political_articles (source, title);
+CREATE INDEX IF NOT EXISTS political_articles_published_at ON political_articles (published_at);
+CREATE INDEX IF NOT EXISTS political_articles_ingested_at ON political_articles (ingested_at);
+CREATE INDEX IF NOT EXISTS political_articles_section ON political_articles (section);
+ALTER TABLE ingest_runs ADD COLUMN IF NOT EXISTS topic TEXT NOT NULL DEFAULT 'defense';
+ALTER TABLE scrape_runs ADD COLUMN IF NOT EXISTS topic TEXT NOT NULL DEFAULT 'defense';
+
 -- Supabase exposes the public schema over its REST API; RLS with no policies
 -- blocks that path. Our direct Postgres connection is unaffected.
+ALTER TABLE political_articles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE articles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingest_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE scrape_runs ENABLE ROW LEVEL SECURITY;
@@ -99,12 +123,27 @@ def connect():
 SCHEMA_CHECK = """
 SELECT (SELECT count(*) FROM pg_class
         WHERE oid IN (to_regclass('public.articles'), to_regclass('public.ingest_runs'),
-                      to_regclass('public.scrape_runs'), to_regclass('public.ingest_events'))
-          AND relrowsecurity) = 4
+                      to_regclass('public.scrape_runs'), to_regclass('public.ingest_events'),
+                      to_regclass('public.political_articles'))
+          AND relrowsecurity) = 5
    AND (SELECT count(*) FROM information_schema.columns
         WHERE table_schema = 'public' AND table_name = 'ingest_runs'
-          AND column_name IN ('title_only', 'run_id')) = 2 AS ready
+          AND column_name IN ('title_only', 'run_id', 'topic')) = 3
+   AND (SELECT count(*) FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'articles'
+          AND column_name = 'section') = 1 AS ready
 """
+
+# Each topic's articles table. Table names reach SQL only through table_for().
+TABLES = {"defense": "articles", "politics": "political_articles"}
+DEFAULT_SECTION = {"defense": "defense", "politics": "combined"}
+
+
+def table_for(topic):
+    """The articles table of a topic; raises ValueError for anything else."""
+    if not isinstance(topic, str) or topic not in TABLES:
+        raise ValueError(f"unknown topic {topic!r}; expected one of {', '.join(TABLES)}")
+    return TABLES[topic]
 
 EVENT_DAYS = 30            # how long run logs are kept
 UNFINISHED_AFTER_MIN = 15  # a run silent this long without finishing was cut off
@@ -124,62 +163,67 @@ def ensure_schema(conn):
     _schema_ready = True
 
 
-def existing_urls(conn, urls):
+def existing_urls(conn, urls, topic="defense"):
     """URLs already stored with their text. Title-only rows are left out so a
     later run (e.g. from a machine the site doesn't block) can fill them in."""
+    table = table_for(topic)
     if not urls:
         return set()
     rows = conn.execute(
-        "SELECT url FROM articles WHERE url = ANY(%s) AND COALESCE(content, '') <> ''", (list(urls),)
+        f"SELECT url FROM {table} WHERE url = ANY(%s) AND COALESCE(content, '') <> ''", (list(urls),)
     ).fetchall()
     return {r["url"] for r in rows}
 
 
-def insert_articles(conn, articles, origin="scraper"):
-    """Insert articles, skipping any whose url or (source, title) already exists.
-    An article with text also fills in a stored title-only row with the same url.
-    Returns the number of new rows."""
+def insert_articles(conn, articles, origin="scraper", topic="defense"):
+    """Insert articles into the topic's table, skipping any whose url or
+    (source, title) already exists. An article with text also fills in a stored
+    title-only row with the same url. Returns the number of new rows."""
+    table = table_for(topic)
     inserted = 0
     with conn.cursor() as cur:
         for a in articles:
             content = (a.get("content") or "").replace("\x00", "")
             if content:
                 cur.execute(
-                    """UPDATE articles SET content = %s
+                    f"""UPDATE {table} SET content = %s
                        WHERE (url = %s OR (source = %s AND title = %s)) AND COALESCE(content, '') = ''""",
                     (content, a["url"], a["source"], a["title"]),
                 )
                 if cur.rowcount:
                     continue
             cur.execute(
-                """
-                INSERT INTO articles (source, url, title, content, published_at, ingested_at, origin, score)
-                VALUES (%s, %s, %s, %s, %s, COALESCE(%s, now()), %s, %s)
+                f"""
+                INSERT INTO {table} (source, url, title, content, published_at, ingested_at, origin, score, section)
+                VALUES (%s, %s, %s, %s, %s, COALESCE(%s, now()), %s, %s, %s)
                 ON CONFLICT DO NOTHING
                 """,
                 # Postgres rejects NUL characters in text, which scraped pages occasionally contain
                 (a["source"], a["url"], a["title"].replace("\x00", ""), content, a.get("published_at"),
-                 a.get("ingested_at"), origin, a.get("score")),
+                 a.get("ingested_at"), origin, a.get("score"), a.get("section") or DEFAULT_SECTION[topic]),
             )
             inserted += cur.rowcount
     conn.commit()
     return inserted
 
 
-def log_run(conn, source, links_found, new_articles, failed, title_only=0, error=None, run_id=None):
+def log_run(conn, source, links_found, new_articles, failed, title_only=0, error=None, run_id=None,
+            topic="defense"):
+    table_for(topic)
     conn.execute(
-        """INSERT INTO ingest_runs (source, links_found, new_articles, failed, title_only, error, run_id)
-           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-        (source, links_found, new_articles, failed, title_only, error, run_id),
+        """INSERT INTO ingest_runs (source, links_found, new_articles, failed, title_only, error, run_id, topic)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+        (source, links_found, new_articles, failed, title_only, error, run_id, topic),
     )
     conn.commit()
 
 
 # ---------- run logs (lib/events.py writes, /api/logs reads) ----------
 
-def start_scrape_run(conn, run_id, trigger, sources):
-    conn.execute("INSERT INTO scrape_runs (id, trigger, sources) VALUES (%s, %s, %s)",
-                 (run_id, trigger, list(sources)))
+def start_scrape_run(conn, run_id, trigger, sources, topic="defense"):
+    table_for(topic)
+    conn.execute("INSERT INTO scrape_runs (id, trigger, sources, topic) VALUES (%s, %s, %s, %s)",
+                 (run_id, trigger, list(sources), topic))
     conn.commit()
 
 
@@ -209,7 +253,7 @@ def finish_scrape_run(conn, run_id, status, new_articles, summary):
 # A run that never reported back (function timed out, runner killed) and has
 # been silent for UNFINISHED_AFTER_MIN shows as 'unfinished' instead of 'running'.
 _RUN_COLUMNS = """
-    r.id, r.trigger, r.sources, r.started_at, r.finished_at, r.new_articles, r.summary,
+    r.id, r.trigger, r.topic, r.sources, r.started_at, r.finished_at, r.new_articles, r.summary,
     CASE WHEN r.finished_at IS NULL
               AND greatest(r.started_at, e.last_at) < now() - make_interval(mins => %(stale)s)
          THEN 'unfinished' ELSE r.status END AS status,
@@ -253,9 +297,11 @@ def get_scrape_run(conn, run_id, max_events=5000):
     return {"run": run, "events": events} if run else None
 
 
-def stats(conn, by="ingested", days=30, coverage_days=90):
-    """Counts for the dashboard. `by` picks which date articles are grouped on;
-    days=0 means all time."""
+def stats(conn, by="ingested", days=30, coverage_days=90, topic="defense", section=""):
+    """Counts for the dashboard, for one topic. `by` picks which date articles
+    are grouped on; days=0 means all time. `section` (politics: domestic,
+    diplomatic or combined) narrows the articles; "" means all of them."""
+    table = table_for(topic)
     date_col = "COALESCE(published_at, ingested_at)" if by == "published" else "ingested_at"
     # Days are counted in Israel time. Overridable for Postgres builds without tz data.
     tz = os.environ.get("DASHBOARD_TZ", "Asia/Jerusalem")
@@ -267,7 +313,10 @@ def stats(conn, by="ingested", days=30, coverage_days=90):
         WITH runs AS (
             SELECT *, (error IS NULL AND links_found > 0) AS ok,
                    row_number() OVER (PARTITION BY source ORDER BY ran_at DESC) AS rn
-            FROM ingest_runs
+            FROM ingest_runs WHERE topic = %(topic)s
+        ),
+        a AS (
+            SELECT * FROM {table} WHERE %(section)s = '' OR section = %(section)s
         )
         SELECT json_build_object(
           'today', (now() AT TIME ZONE %(tz)s)::date,
@@ -283,11 +332,11 @@ def stats(conn, by="ingested", days=30, coverage_days=90):
               'last7',     count(*) FILTER (WHERE ingested_at >= now() - interval '7 days'),
               'prev7',     count(*) FILTER (WHERE ingested_at >= now() - interval '14 days'
                                               AND ingested_at <  now() - interval '7 days'))
-            FROM articles),
+            FROM a),
 
           'daily', (SELECT coalesce(json_agg(d ORDER BY d.day DESC, d.source), '[]') FROM (
               SELECT {day_expr} AS day, source, count(*)::int AS count
-              FROM articles
+              FROM a
               WHERE %(days)s::int = 0 OR {day_expr} >= (now() AT TIME ZONE %(tz)s)::date - %(days)s::int
               GROUP BY 1, 2) d),
 
@@ -309,7 +358,7 @@ def stats(conn, by="ingested", days=30, coverage_days=90):
                        -- daily catch-up only: backfilled history (stored long after publication) would swamp it
                        FILTER (WHERE origin = 'scraper' AND published_at IS NOT NULL
                                  AND ingested_at - published_at < interval '30 days'))::numeric, 1) AS median_delay_h
-              FROM articles GROUP BY source) s),
+              FROM a GROUP BY source) s),
 
           -- Per site: scraping health
           'health', (SELECT coalesce(json_agg(h), '[]') FROM (
@@ -332,37 +381,41 @@ def stats(conn, by="ingested", days=30, coverage_days=90):
           -- Articles per site per publish day, for the coverage heatmap
           'coverage', (SELECT coalesce(json_agg(c), '[]') FROM (
               SELECT (published_at AT TIME ZONE %(tz)s)::date AS day, source, count(*)::int AS count
-              FROM articles
+              FROM a
               WHERE published_at >= (now() AT TIME ZONE %(tz)s)::date - %(cov)s::int
               GROUP BY 1, 2) c),
 
           'latest', (SELECT coalesce(json_agg(a), '[]') FROM (
               SELECT source, title, url, published_at, ingested_at
-              FROM articles WHERE origin = 'scraper'
+              FROM a WHERE origin = 'scraper'
               ORDER BY coalesce(published_at, ingested_at) DESC LIMIT 12) a)
         ) AS stats
         """,
-        {"tz": tz, "days": days, "cov": coverage_days},
+        {"tz": tz, "days": days, "cov": coverage_days, "topic": topic, "section": section},
     ).fetchone()
-    out = {"by": by, "days": days, "coverage_days": coverage_days, **row["stats"]}
+    out = {"topic": topic, "section": section, "by": by, "days": days,
+           "coverage_days": coverage_days, **row["stats"]}
     now = datetime.now(timezone.utc)
     for h in out["health"]:
         h["status"] = site_status(h["last_ok"], h["history"] or [], now)
     return out
 
 
-def search_articles(conn, q="", source="", date_from=None, date_to=None, limit=50, offset=0):
-    """One page of articles for the dashboard's explorer, newest first.
+def search_articles(conn, q="", source="", date_from=None, date_to=None, limit=50, offset=0,
+                    topic="defense", section=""):
+    """One page of a topic's articles for the dashboard's explorer, newest first.
     `q` matches the title or the text; dates bound the publish date (inclusive)."""
+    table = table_for(topic)
     # ILIKE treats % and _ as wildcards and \ as the escape; the search box should not
     pattern = "%" + q.replace("\\", r"\\").replace("%", r"\%").replace("_", r"\_") + "%"
     rows = conn.execute(
-        """
-        SELECT source, title, url, published_at, ingested_at, origin, score,
+        f"""
+        SELECT source, section, title, url, published_at, ingested_at, origin, score,
                length(content) AS length, left(content, 700) AS snippet,
                count(*) OVER () AS total
-        FROM articles
+        FROM {table}
         WHERE (%(q)s = '' OR title ILIKE %(pat)s OR content ILIKE %(pat)s)
+          AND (%(section)s = '' OR section = %(section)s)
           AND (%(source)s = '' OR source = %(source)s)
           AND (%(from)s::date IS NULL OR published_at >= %(from)s::date)
           AND (%(to)s::date IS NULL OR published_at < %(to)s::date + 1)
@@ -370,7 +423,7 @@ def search_articles(conn, q="", source="", date_from=None, date_to=None, limit=5
         LIMIT %(limit)s OFFSET %(offset)s
         """,
         {"q": q, "pat": pattern, "source": source, "from": date_from, "to": date_to,
-         "limit": limit, "offset": offset},
+         "limit": limit, "offset": offset, "section": section},
     ).fetchall()
     total = rows[0]["total"] if rows else 0
     for r in rows:

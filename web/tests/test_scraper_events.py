@@ -15,7 +15,7 @@ sys.path.insert(0, HERE)
 from lib import scraper  # noqa: E402
 from curl_cffi.requests.exceptions import HTTPError  # noqa: E402
 from test_scraper_pagination import (  # noqa: E402
-    PAGE_1, SOURCE, FakeSite, article_urls, page_n, section_page)
+    PAGE_1, SOURCE, FakeSite, article_urls, links_of, page_n, section_page)
 from test_scraper_retry import ARTICLE_FULL, ARTICLE_SHELL  # noqa: E402
 
 
@@ -48,7 +48,7 @@ class Base(unittest.TestCase):
 class WalkEventsTest(Base):
     def walk(self, site, **kw):
         with mock.patch.object(scraper, "fetch", site.fetch):
-            return scraper.get_links(SOURCE, log=self.log, **kw)
+            return links_of("defense", SOURCE, log=self.log, **kw)
 
     def test_each_page_read_is_logged_with_its_link_counts(self):
         site = FakeSite({PAGE_1: section_page("a1", "a2"), page_n(2): section_page("b1")})
@@ -83,7 +83,7 @@ class WalkEventsTest(Base):
     def test_walk_without_a_logger_still_works(self):
         site = FakeSite({PAGE_1: section_page("a1")})
         with mock.patch.object(scraper, "fetch", site.fetch):
-            self.assertEqual(scraper.get_links(SOURCE, max_pages=1), article_urls("a1"))
+            self.assertEqual(links_of("defense", SOURCE, max_pages=1), article_urls("a1"))
 
 
 class ArticleEventsTest(Base):

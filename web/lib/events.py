@@ -26,9 +26,10 @@ def null_log(level, step, message, url=None, **detail):
 
 class RunLog:
     def __init__(self, trigger, sources, writer, clock=time.monotonic,
-                 flush_every_s=2.0, max_buffer=40):
+                 flush_every_s=2.0, max_buffer=40, topic="defense"):
         self.run_id = uuid.uuid4().hex[:12]
         self.trigger = trigger
+        self.topic = topic
         self.sources = list(sources)
         self.writer = writer
         self.clock = clock
@@ -43,7 +44,7 @@ class RunLog:
 
     # ---- recording -------------------------------------------------------
     def start(self):
-        self._safe(self.writer.start_run, self.run_id, self.trigger, self.sources)
+        self._safe(self.writer.start_run, self.run_id, self.trigger, self.sources, self.topic)
 
     def for_site(self, source):
         def log(level, step, message, url=None, **detail):
@@ -110,9 +111,9 @@ class DbWriter:
             self._conn = self._connect()
         return self._conn
 
-    def start_run(self, run_id, trigger, sources):
+    def start_run(self, run_id, trigger, sources, topic="defense"):
         from . import db
-        db.start_scrape_run(self._c(), run_id, trigger, sources)
+        db.start_scrape_run(self._c(), run_id, trigger, sources, topic=topic)
 
     def add_events(self, events):
         from . import db

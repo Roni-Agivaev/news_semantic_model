@@ -18,7 +18,7 @@ class FakeWriter:
         self.fail = fail
         self.started, self.batches, self.finished = [], [], []
 
-    def start_run(self, run_id, trigger, sources):
+    def start_run(self, run_id, trigger, sources, topic="defense"):
         self._maybe_fail()
         self.started.append((run_id, trigger, sources))
 
