@@ -3,7 +3,7 @@
   "outputDirectory": "public",
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/politics", "destination": "/index.html" }
+    { "source": "/politics", "destination": "/" }
   ],
   "functions": {
     "api/cron.py": { "maxDuration": 300 },
