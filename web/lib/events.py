@@ -111,19 +111,30 @@ class DbWriter:
             self._conn = self._connect()
         return self._conn
 
+    def _write(self, fn, *args, **kwargs):
+        """Run a write, reopening the connection once if the server dropped it."""
+        try:
+            return fn(self._c(), *args, **kwargs)
+        except Exception:
+            self.close()
+            return fn(self._c(), *args, **kwargs)
+
     def start_run(self, run_id, trigger, sources, topic="defense"):
         from . import db
-        db.start_scrape_run(self._c(), run_id, trigger, sources, topic=topic)
+        self._write(db.start_scrape_run, run_id, trigger, sources, topic=topic)
 
     def add_events(self, events):
         from . import db
-        db.add_events(self._c(), events)
+        self._write(db.add_events, events)
 
     def finish_run(self, run_id, status, new_articles, summary):
         from . import db
-        db.finish_scrape_run(self._c(), run_id, status, new_articles, summary)
+        self._write(db.finish_scrape_run, run_id, status, new_articles, summary)
 
     def close(self):
         if self._conn is not None:
-            self._conn.close()
+            try:
+                self._conn.close()
+            except Exception:
+                pass
             self._conn = None

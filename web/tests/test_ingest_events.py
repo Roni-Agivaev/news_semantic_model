@@ -96,6 +96,40 @@ class IngestEventsTest(unittest.TestCase):
         self.assertIn("0 to scrape", log.text())
 
 
+class DroppedConnectionTest(IngestEventsTest):
+    def test_a_connection_dropped_mid_run_is_reopened_and_the_save_retried(self):
+        """2026-11-15: the database closed every connection during a long
+        politics backfill, and five sources lost their scraped articles."""
+        import psycopg
+
+        class Flaky(FakeDb):
+            def __init__(self):
+                super().__init__()
+                self.connects = 0
+                self.fail_next_insert = True
+
+            def connect(self):
+                self.connects += 1
+                return mock.Mock()
+
+            def insert_articles(self, conn, articles, topic="defense"):
+                if self.fail_next_insert:
+                    self.fail_next_insert = False
+                    raise psycopg.OperationalError("server closed the connection unexpectedly")
+                return super().insert_articles(conn, articles, topic=topic)
+
+        fake = Flaky()
+        log = Recorder()
+        with mock.patch.object(ingest, "db", fake), \
+             mock.patch.object(ingest, "get_links", lambda t, s, **kw: [("u1", "defense")]), \
+             mock.patch.object(ingest, "scrape_article", lambda s, u, **kw: article(u)):
+            result = ingest.ingest_site("defense", "Ynet", log=log, run_id="r1")
+        self.assertIsNone(result["error"])
+        self.assertEqual(result["new_articles"], 1)
+        self.assertEqual(fake.connects, 2)
+        self.assertEqual(len(fake.runs), 1)
+
+
 class TopicTest(IngestEventsTest):
     def test_articles_carry_their_section_and_go_to_the_topic(self):
         _, _, fake = self.run_site(links=["u1"], topic="politics")

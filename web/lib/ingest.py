@@ -9,11 +9,38 @@ which the /logs page reads.
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+import psycopg
+
 from . import db
 from .events import DbWriter, RunLog, null_log
 from .scraper import MAX_PAGES, SITES, get_links, get_sitemap_entries, scrape_article, sources as topic_sources
 
 ARTICLE_WORKERS = 4  # parallel article fetches per site
+
+
+class _Conn:
+    """A database connection that is reopened once when the server has dropped it.
+
+    A source can scrape for minutes between two database calls, and the server
+    may close connections meanwhile (2026-11-15: every connection of a politics
+    backfill was dropped at once and five sources lost their articles)."""
+
+    def __init__(self):
+        self.conn = db.connect()
+
+    def run(self, fn, *args, **kwargs):
+        try:
+            return fn(self.conn, *args, **kwargs)
+        except psycopg.OperationalError:
+            self.close()
+            self.conn = db.connect()
+            return fn(self.conn, *args, **kwargs)
+
+    def close(self):
+        try:
+            self.conn.close()
+        except Exception:
+            pass
 
 
 def _err(where, e):
@@ -36,7 +63,7 @@ def ingest_site(topic, source, max_pages=MAX_PAGES, stop_at_known=True, log=null
     site = SITES[topic][source]
     result = {"source": source, "links_found": 0, "new_articles": 0, "failed": 0, "title_only": 0, "error": None}
     started = time.monotonic()
-    conn = db.connect()
+    conn = _Conn()
     try:
         log("info", "start", f"Started: up to {max_pages} section page(s)"
             + ("" if stop_at_known else ", deep walk"))
@@ -54,7 +81,7 @@ def ingest_site(topic, source, max_pages=MAX_PAGES, stop_at_known=True, log=null
         try:
             tagged = get_links(
                 topic, source,
-                known=(lambda urls: db.existing_urls(conn, urls, topic=topic)) if stop_at_known else None,
+                known=(lambda urls: conn.run(db.existing_urls, urls, topic=topic)) if stop_at_known else None,
                 max_pages=max_pages,
                 log=log,
             )
@@ -75,7 +102,7 @@ def ingest_site(topic, source, max_pages=MAX_PAGES, stop_at_known=True, log=null
             return result
 
         result["links_found"] = len(links)
-        known = db.existing_urls(conn, links, topic=topic)
+        known = conn.run(db.existing_urls, links, topic=topic)
         todo = [u for u in links if u not in known]
         log("info", "links", f"{len(links)} links: {len(known)} already stored, {len(todo)} to scrape")
 
@@ -99,7 +126,7 @@ def ingest_site(topic, source, max_pages=MAX_PAGES, stop_at_known=True, log=null
                 log("info", "save", f"Skipped {len(articles) - len(kept)} published before {since:%Y-%m-%d}")
             articles = kept
         result["title_only"] = sum(1 for a in articles if not a["content"])
-        result["new_articles"] = db.insert_articles(conn, articles, topic=topic)
+        result["new_articles"] = conn.run(db.insert_articles, articles, topic=topic)
         if articles:
             dupes = len(articles) - result["new_articles"]
             log("info", "save", f"Saved {result['new_articles']} new article(s)"
@@ -111,7 +138,7 @@ def ingest_site(topic, source, max_pages=MAX_PAGES, stop_at_known=True, log=null
     finally:
         _log_summary(log, result, time.monotonic() - started)
         try:
-            db.log_run(conn, run_id=run_id, topic=topic, **result)
+            conn.run(db.log_run, run_id=run_id, topic=topic, **result)
         finally:
             conn.close()
 
