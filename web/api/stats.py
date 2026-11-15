@@ -1,5 +1,6 @@
 """
-GET /api/stats?by=ingested|published&days=30 — article counts for the dashboard.
+GET /api/stats?topic=defense|politics&section=&by=ingested|published&days=30
+Article counts for the dashboard.
 Requires the login cookie (see api/login.py).
 """
 import json
@@ -11,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import auth, db  # noqa: E402
+from lib.params import topic_and_section  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
@@ -19,6 +21,9 @@ class handler(BaseHTTPRequestHandler):
             return self._send(401, {"error": "login required"})
 
         query = parse_qs(urlparse(self.path).query)
+        topic, section = topic_and_section({k: v[0] for k, v in query.items()})
+        if topic is None:
+            return self._send(400, {"error": "unknown topic"})
         by = "published" if query.get("by", [""])[0] == "published" else "ingested"
         try:
             days = int(query.get("days", ["30"])[0])
@@ -29,7 +34,7 @@ class handler(BaseHTTPRequestHandler):
         try:
             conn = db.connect()
             try:
-                body = db.stats(conn, by=by, days=days)
+                body = db.stats(conn, by=by, days=days, topic=topic, section=section)
             finally:
                 conn.close()
             status = 200

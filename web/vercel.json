@@ -2,6 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "outputDirectory": "public",
   "cleanUrls": true,
+  "rewrites": [
+    { "source": "/politics", "destination": "/index.html" }
+  ],
   "functions": {
     "api/cron.py": { "maxDuration": 300 },
     "api/stats.py": { "maxDuration": 30 },
@@ -9,6 +12,7 @@
     "api/logs.py": { "maxDuration": 30 }
   },
   "crons": [
-    { "path": "/api/cron", "schedule": "0 20 * * *" }
+    { "path": "/api/cron?topic=defense", "schedule": "0 20 * * *" },
+    { "path": "/api/cron?topic=politics", "schedule": "30 20 * * *" }
   ]
 }

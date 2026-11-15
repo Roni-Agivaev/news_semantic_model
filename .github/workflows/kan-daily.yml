@@ -1,7 +1,7 @@
 # Daily Kan News scrape. Kan's Cloudflare blocks Vercel's servers but lets
 # GitHub's runners through, so Kan is ingested here instead of by the Vercel cron.
 # Needs the repository secret DATABASE_URL (Settings -> Secrets and variables -> Actions).
-name: Kan News daily scrape
+name: Kan News daily scrape (defense + politics)
 on:
   schedule:
     - cron: "15 20 * * *"  # 20:15 UTC (23:15 Israel winter / 22:15 summer), right after the Vercel cron
@@ -21,11 +21,20 @@ jobs:
           cache: pip
           cache-dependency-path: web/requirements.txt
       - run: pip install -r requirements.txt
-      - name: Scrape Kan News
+      - name: Scrape Kan News (defense)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONIOENCODING: utf-8
           RUN_TRIGGER: kan-action
         run: |
-          python run_local.py "Kan News" | tee result.json
-          python -c "import json,sys; s=json.load(open('result.json'))['sites'][0]; sys.exit(1 if s['error'] else 0)"
+          python run_local.py --topic defense "Kan News" | tee defense.json
+          python -c "import json,sys; s=json.load(open('defense.json'))['sites'][0]; sys.exit(1 if s['error'] else 0)"
+      - name: Scrape Kan News (politics)
+        if: ${{ !cancelled() }}  # still run when the defense step failed
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONIOENCODING: utf-8
+          RUN_TRIGGER: kan-action
+        run: |
+          python run_local.py --topic politics "Kan News" | tee politics.json
+          python -c "import json,sys; s=json.load(open('politics.json'))['sites'][0]; sys.exit(1 if s['error'] else 0)"

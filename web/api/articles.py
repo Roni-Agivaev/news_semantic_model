@@ -1,5 +1,5 @@
 """
-GET /api/articles?q=&source=&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=50&offset=0
+GET /api/articles?topic=&section=&q=&source=&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=50&offset=0
 One page of stored articles for the dashboard's explorer. Requires the login cookie.
 """
 import json
@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import auth, db  # noqa: E402
+from lib.params import topic_and_section  # noqa: E402
 
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -29,6 +30,9 @@ class handler(BaseHTTPRequestHandler):
             return self._send(401, {"error": "login required"})
 
         query = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+        topic, section = topic_and_section(query)
+        if topic is None:
+            return self._send(400, {"error": "unknown topic"})
         date = lambda k: query.get(k) if DATE.match(query.get(k, "")) else None  # noqa: E731
         try:
             conn = db.connect()
@@ -41,6 +45,8 @@ class handler(BaseHTTPRequestHandler):
                     date_to=date("to"),
                     limit=_int(query.get("limit"), 50, 1, 200),
                     offset=_int(query.get("offset"), 0, 0, 1_000_000),
+                    topic=topic,
+                    section=section,
                 )
             finally:
                 conn.close()

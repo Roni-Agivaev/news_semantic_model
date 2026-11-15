@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="/app.css?v=5">
+<link rel="stylesheet" href="/app.css?v=6">
 <script>
   try { const t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
@@ -36,7 +36,8 @@
   </a>
   <nav class="side-nav">
     <div class="side-label">Pages</div>
-      <a class="side-link" href="/"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="3" width="6" height="8" rx="1.5"/><rect x="11" y="3" width="6" height="5" rx="1.5"/><rect x="11" y="10" width="6" height="7" rx="1.5"/><rect x="3" y="13" width="6" height="4" rx="1.5"/></svg><span>Dashboard</span></a>
+      <a class="side-link" href="/"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5l6 2.5v4.5c0 3.7-2.6 6.6-6 8-3.4-1.4-6-4.3-6-8V5z"/></svg><span>Defense</span></a>
+      <a class="side-link" href="/politics"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17h14M4 8h12M10 3l7 4H3z"/><path d="M6 9v6M10 9v6M14 9v6"/></svg><span>Politics</span></a>
       <a class="side-link" href="/logs" aria-current="page"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h8"/><circle cx="16" cy="15" r="1.2"/></svg><span>Logs</span></a>
   </nav>
   <nav class="side-nav side-sections" id="side-sections">
@@ -48,7 +49,7 @@
   <div class="side-foot">
     <div class="side-label">Schedule</div>
     <div class="side-sched"><span>Daily scrape</span><b id="side-next"></b></div>
-    <div class="side-sched muted"><span>Vercel 20:00 UTC · Kan 20:15 UTC</span></div>
+    <div class="side-sched muted"><span>Defense 20:00 · Politics 20:30 · Kan 20:15 UTC</span></div>
   </div>
 </aside>
 <div class="side-scrim" id="side-scrim" hidden></div>
@@ -80,6 +81,7 @@
           <h2>Runs</h2>
           <div class="hint" id="runs-hint">Newest first</div>
         </div>
+        <select id="f-topic" aria-label="Topic"><option value="">All topics</option><option value="defense">Defense</option><option value="politics">Politics</option></select>
       </div>
       <ul class="run-list" id="run-list"></ul>
     </section>
@@ -114,7 +116,7 @@
 </main>
 </div>
 
-<script src="/nav.js?v=5"></script>
-<script src="/logs.js?v=2"></script>
+<script src="/nav.js?v=6"></script>
+<script src="/logs.js?v=3"></script>
 </body>
 </html>

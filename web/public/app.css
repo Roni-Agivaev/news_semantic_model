@@ -14,7 +14,7 @@
   --border-strong: rgba(17,17,16,0.16);
   --shadow: 0 1px 2px rgba(17,17,16,0.04), 0 1px 1px rgba(17,17,16,0.03);
   --accent: #2a78d6;
-  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --other: #898781;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #7b5cd6; --s8: #c2410c; --s9: #0e7490; --s10: #a16207; --s11: #be185d; --other: #898781;
   --good: #0ca30c; --good-text: #006300; --good-bg: rgba(12,163,12,0.10);
   --warning: #fab219; --warn-text: #8a5a00; --warn-bg: rgba(250,178,25,0.16);
   --critical: #d03b3b; --bad-bg: rgba(208,59,59,0.10);
@@ -28,7 +28,7 @@
     --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8a8983;
     --grid: #2a2a28; --axis: #3a3a37; --border: rgba(255,255,255,0.08); --border-strong: rgba(255,255,255,0.16);
     --shadow: none;
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2e9a2e;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2e9a2e; --s7: #9b80ea; --s8: #e0682f; --s9: #22a3c3; --s10: #caa03a; --s11: #e2559a;
     --good-text: #3cc13c; --good-bg: rgba(12,163,12,0.16); --warn-text: #f3c04f; --warn-bg: rgba(250,178,25,0.14);
     --bad-bg: rgba(208,59,59,0.18); --up-text: #3cc13c; --down-text: #e66767;
   }
@@ -39,7 +39,7 @@
   --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8a8983;
   --grid: #2a2a28; --axis: #3a3a37; --border: rgba(255,255,255,0.08); --border-strong: rgba(255,255,255,0.16);
   --shadow: none;
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2e9a2e;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2e9a2e; --s7: #9b80ea; --s8: #e0682f; --s9: #22a3c3; --s10: #caa03a; --s11: #e2559a;
   --good-text: #3cc13c; --good-bg: rgba(12,163,12,0.16); --warn-text: #f3c04f; --warn-bg: rgba(250,178,25,0.14);
   --bad-bg: rgba(208,59,59,0.18); --up-text: #3cc13c; --down-text: #e66767;
 }
@@ -367,3 +367,8 @@ body.locked .shell { margin-left: 0; }
   main [id^="sec-"], #kpis, #events { scroll-margin-top: 12px; }
 }
 @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+
+/* topic label on Logs runs */
+.topic-tag { font-size: 11px; font-weight: 600; color: var(--text-secondary); border: 1px solid var(--border-strong);
+  border-radius: 999px; padding: 0 7px; margin-inline-start: 6px; margin-inline-end: auto; }
+.topbar-actions .seg[hidden] { display: none; }

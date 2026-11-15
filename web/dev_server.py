@@ -37,6 +37,8 @@ class DevHandler(SimpleHTTPRequestHandler):
             return delegate(self, LogsHandler, "do_GET")
         if self.path.split("?")[0] == "/logs":
             self.path = "/logs.html" + self.path[len("/logs"):]
+        if self.path.split("?")[0] == "/politics":
+            self.path = "/index.html" + self.path[len("/politics"):]
         return super().do_GET()
 
     def do_POST(self):

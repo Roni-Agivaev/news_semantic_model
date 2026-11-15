@@ -5,6 +5,14 @@
   const btn = document.getElementById("menu-btn");
   const narrow = window.matchMedia("(max-width: 960px)");
 
+  // index.html serves both / and /politics, so the current page is set here
+  const here = location.pathname.replace(/\/+$/, "").replace(/\.html$/, "") || "/";
+  for (const a of side.querySelectorAll(".side-link")) {
+    const path = a.getAttribute("href");
+    if (path === here || (path === "/" && here === "/index")) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  }
+
   function setOpen(open) {
     side.classList.toggle("open", open);
     scrim.hidden = !open;

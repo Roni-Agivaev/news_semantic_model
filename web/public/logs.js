@@ -1,6 +1,7 @@
 // Scrape logs page: recent runs on the left, the selected run's events on the right.
 // Follows a running scrape live by polling /api/logs.
-const SOURCES = ["Ynet", "Kan News", "Channel 13", "Channel 14", "I24 NEWS", "Channel 12"];
+const SOURCES = ["Ynet", "Kan News", "Channel 13", "Channel 14", "I24 NEWS", "Channel 12",
+                 "Maariv", "Israel Hayom", "JDN", "Zman Israel", "Davar"];
 const POLL_LIVE_MS = 4000;    // while a run is in progress
 const POLL_IDLE_MS = 30000;   // otherwise, to notice a new run
 const TRIGGERS = {
@@ -142,15 +143,19 @@ function renderHeader() {
 function badge(status) {
   return `<span class="badge st-${esc(status)}">${status === "running" ? '<i class="pulse"></i>' : ""}${esc(STATUS_TEXT[status] || status)}</span>`;
 }
+const TOPIC_TEXT = { defense: "Defense", politics: "Politics" };
+let topicFilter = "";
+$("f-topic").addEventListener("change", e => { topicFilter = e.target.value; renderRuns(); });
 function renderRuns() {
-  $("runs-hint").textContent = st.runs.length ? `${st.runs.length} runs in the last 30 days, newest first` : "Newest first";
-  if (!st.runs.length) {
+  const runs = st.runs.filter(r => !topicFilter || (r.topic || "defense") === topicFilter);
+  $("runs-hint").textContent = runs.length ? `${runs.length} runs in the last 30 days, newest first` : "Newest first";
+  if (!runs.length) {
     $("run-list").innerHTML = `<li class="empty">No runs logged yet.<br>The next daily run (20:00 UTC) or a click on <b>Ingest now</b> will show up here.</li>`;
     return;
   }
-  $("run-list").innerHTML = st.runs.map(r => `
+  $("run-list").innerHTML = runs.map(r => `
     <li><button type="button" class="run-item${r.id === st.runId ? " active" : ""}" data-id="${esc(r.id)}">
-      <div class="run-top"><b>${esc(TRIGGERS[r.trigger] || r.trigger)}</b>${badge(r.status)}</div>
+      <div class="run-top"><b>${esc(TRIGGERS[r.trigger] || r.trigger)}</b><span class="topic-tag">${esc(TOPIC_TEXT[r.topic] || r.topic || "Defense")}</span>${badge(r.status)}</div>
       <div class="run-when">${esc(when(r.started_at))} · ${dur(r.seconds)}</div>
       <div class="run-counts">
         <span>${r.new_articles != null ? `<b>+${fmt(r.new_articles)}</b> new` : "…"}</span>
@@ -173,7 +178,7 @@ function renderRun() {
     $("events").innerHTML = `<div class="empty">Select a run.</div>`; $("events-info").textContent = "";
     return;
   }
-  $("run-title").innerHTML = `${esc(TRIGGERS[r.trigger] || r.trigger)} ${badge(r.status)}`;
+  $("run-title").innerHTML = `${esc(TRIGGERS[r.trigger] || r.trigger)} · ${esc(TOPIC_TEXT[r.topic] || r.topic || "Defense")} ${badge(r.status)}`;
   $("run-sub").textContent = `Run ${r.id} · started ${when(r.started_at)}`;
   const facts = [
     ["Duration", dur(r.seconds) + (live(r) ? " so far" : "")],

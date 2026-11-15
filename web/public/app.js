@@ -1,9 +1,16 @@
 "use strict";
 
 // Fixed source -> color slot, so a site keeps its color no matter what is filtered.
-const SOURCES = ["Ynet", "Kan News", "Channel 13", "Channel 14", "I24 NEWS", "Channel 12"];
+const SOURCES = ["Ynet", "Kan News", "Channel 13", "Channel 14", "I24 NEWS", "Channel 12",
+                 "Maariv", "Israel Hayom", "JDN", "Zman Israel", "Davar"];
 // Daily schedule in UTC (mirrors web/vercel.json and .github/workflows/kan-daily.yml).
-const SCHEDULE_UTC = { default: [20, 0], "Kan News": [20, 15] };
+// The same page serves /politics; everything it loads is for that topic.
+const TOPIC = location.pathname.replace(/\/+$/, "") === "/politics" ? "politics" : "defense";
+const TOPIC_LABEL = { defense: "Defense", politics: "Politics" }[TOPIC];
+const SECTION_LABEL = { domestic: "domestic", diplomatic: "diplomatic", combined: "combined" };
+const SCHEDULE_UTC = TOPIC === "politics"
+  ? { default: [20, 30], "Kan News": [20, 15] }
+  : { default: [20, 0], "Kan News": [20, 15] };
 const STATUS = {
   ok: { label: "OK", rank: 0 },
   degraded: { label: "Degraded", rank: 1 },
@@ -15,7 +22,9 @@ const STATUS = {
 const colorOf = s => { const i = SOURCES.indexOf(s); return i >= 0 ? `var(--s${i + 1})` : "var(--other)"; };
 const order = s => (SOURCES.includes(s) ? SOURCES.indexOf(s) : 99);
 const bySource = (a, b) => order(a.source) - order(b.source);
-const state = { by: "ingested", days: 30, view: "daily", runs: "all" };
+const state = { by: "ingested", days: 30, view: "daily", runs: "all", section: "" };
+// topic (and the politics section filter) for every API call
+const scope = () => `topic=${TOPIC}${state.section ? `&section=${state.section}` : ""}`;
 let lastData = null;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -110,7 +119,7 @@ $("ingest-btn").addEventListener("click", async () => {
   const btn = $("ingest-btn"), box = $("ingest-result");
   btn.disabled = true; btn.textContent = "Ingesting…";
   box.hidden = false; box.className = "notice";
-  box.innerHTML = `<div class="head">Ingesting…</div>Scraping 5 sites now. This takes about 10 to 60 seconds. <a href="/logs" target="_blank">Watch it live in Logs ↗</a>`;
+  box.innerHTML = `<div class="head">Ingesting…</div>Scraping defense, then politics. This takes one to three minutes. <a href="/logs" target="_blank">Watch it live in Logs ↗</a>`;
   const t0 = Date.now();
   try {
     const r = await fetch("/api/cron", { method: "POST" });
@@ -118,14 +127,16 @@ $("ingest-btn").addEventListener("click", async () => {
     const res = await r.json();
     if (!r.ok) throw new Error(res.error || `HTTP ${r.status}`);
     const secs = Math.round((Date.now() - t0) / 1000);
-    const sites = [...res.sites].sort(bySource);
+    const runs = res.runs || [res];
+    const sites = runs.flatMap(run => (run.sites || []).map(s => ({ ...s, source: `${s.source}${runs.length > 1 ? ` (${run.topic})` : ""}` })));
+    for (const run of runs) if (run.error) sites.push({ source: run.topic, error: run.error });
     const bad = sites.filter(s => s.error);
     const parts = sites.map(s => s.error
       ? `<span class="bad-text">${esc(s.source)}: failed</span>`
       : `${esc(s.source)} +${s.new_articles} <span class="muted">(${s.links_found} links${s.failed ? `, ${s.failed} skipped` : ""})</span>`);
     box.className = "notice " + (bad.length ? "bad" : "ok");
     box.innerHTML = `<button class="link-btn close" type="button" onclick="this.parentElement.hidden=true">Close</button>
-      <div class="head">${bad.length ? "⚠" : "✓"} Done in ${secs} s: ${fmt(res.new_articles)} new article${res.new_articles === 1 ? "" : "s"}${res.run_id ? ` · <a href="/logs?run=${esc(res.run_id)}">see the log</a>` : ""}</div>
+      <div class="head">${bad.length ? "⚠" : "✓"} Done in ${secs} s: ${fmt(res.new_articles)} new article${res.new_articles === 1 ? "" : "s"}${runs.filter(x => x.run_id).map(x => ` · <a href="/logs?run=${esc(x.run_id)}">${esc(x.topic || "")} log</a>`).join("")}</div>
       <div>${parts.join(" · ")}</div>
       ${bad.map(s => `<div class="muted">${esc(s.source)}: ${esc(s.error)}</div>`).join("")}
       ${res.kan ? `<div class="muted">Kan News: ${esc(res.kan.message)}</div>` : ""}`;
@@ -141,7 +152,7 @@ $("ingest-btn").addEventListener("click", async () => {
 // ---------- data ----------
 async function load() {
   try {
-    const r = await fetch(`/api/stats?by=${state.by}&days=${state.days}`);
+    const r = await fetch(`/api/stats?${scope()}&by=${state.by}&days=${state.days}`);
     if (r.status === 401) return lock(true);
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || r.statusText);
@@ -154,6 +165,8 @@ async function load() {
 }
 
 function render(data) {
+  const n = data.sites.length;
+  $("brand-sub").textContent = `${n} news site${n === 1 ? "" : "s"} · ${TOPIC} sections` + (state.section ? ` · ${SECTION_LABEL[state.section]} only` : "");
   const health = Object.fromEntries(data.health.map(h => [h.source, h]));
   const sites = [...data.sites].sort(bySource);
   renderHeader(data);
@@ -542,7 +555,8 @@ function highlight(text, q) {
 }
 async function explore() {
   const q = $("f-q").value.trim();
-  const params = new URLSearchParams({ q, source: $("f-source").value, limit: PAGE, offset: ex.offset });
+  const params = new URLSearchParams({ topic: TOPIC, q, source: $("f-source").value, limit: PAGE, offset: ex.offset });
+  if (state.section) params.set("section", state.section);
   if ($("f-from").value) params.set("from", $("f-from").value);
   if ($("f-to").value) params.set("to", $("f-to").value);
   const seq = ++ex.seq;
@@ -603,3 +617,19 @@ $("next").addEventListener("click", () => { ex.offset += PAGE; explore(); });
 load();
 explore();
 setInterval(() => { if (lastData) $("next-run").textContent = untilNextRun(); }, 60000);
+
+// ---------- topic page setup ----------
+document.title = `${TOPIC_LABEL} · Article Ingestion`;
+$("brand-name").textContent = TOPIC_LABEL;
+if (TOPIC === "politics") {
+  const seg = $("section-filter");
+  seg.hidden = false;
+  seg.addEventListener("click", e => {
+    const b = e.target.closest("button[data-v]");
+    if (!b) return;
+    state.section = b.dataset.v;
+    for (const x of seg.querySelectorAll("button")) x.setAttribute("aria-pressed", x === b);
+    ex.offset = 0;
+    load(); explore();
+  });
+}
