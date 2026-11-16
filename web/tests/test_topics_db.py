@@ -132,6 +132,15 @@ class QueriesTest(unittest.TestCase):
         self.assertEqual(params["topic"], "politics")
         self.assertEqual(params["section"], "domestic")
 
+    def test_stats_can_limit_run_history_to_current_sources(self):
+        """Removed outlets (Davar, Zman Israel) keep their old run rows; the
+        dashboard should not list them as failing sites."""
+        conn = FakeConn(one={"stats": {"health": []}})
+        db.stats(conn, topic="defense", sources=["Ynet", "Maariv"])
+        sql, params = conn.calls[-1]
+        self.assertIn("source = ANY(%(sources)s)", sql)
+        self.assertEqual(params["sources"], ["Ynet", "Maariv"])
+
     def test_search_filters_by_section(self):
         conn = FakeConn()
         db.search_articles(conn, topic="politics", section="diplomatic")

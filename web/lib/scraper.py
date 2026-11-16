@@ -74,13 +74,6 @@ SITES = {
             _section("defense", "https://www.jdn.co.il/category/news/military/",
                      r"https://www\.jdn\.co\.il/news/\d+/",
                      page_url="https://www.jdn.co.il/category/news/military/page/{n}/")]},
-        "Zman Israel": {"base": "https://www.zman.co.il", "sections": [
-            _section("defense", "https://www.zman.co.il/feed/561/", r"https://www\.zman\.co\.il/\d{6}/",
-                     page_url="https://www.zman.co.il/feed/561/page/{n}/")]},
-        "Davar": {"base": "https://www.davar1.co.il", "sections": [
-            _section("defense",
-                     "https://www.davar1.co.il/topic/%D7%A6%D7%91%D7%90-%D7%95%D7%91%D7%99%D7%98%D7%97%D7%95%D7%9F/",
-                     r"https://www\.davar1\.co\.il/\d{6}/")]},
     },
     "politics": {
         # Without JavaScript Ynet's politics page shows the defense list, so its feed is read.
@@ -125,9 +118,6 @@ SITES = {
             _section("diplomatic", "https://www.jdn.co.il/category/news/state/",
                      r"https://www\.jdn\.co\.il/news/\d+/",
                      page_url="https://www.jdn.co.il/category/news/state/page/{n}/")]},
-        "Zman Israel": {"base": "https://www.zman.co.il", "sections": [
-            _section("combined", "https://www.zman.co.il/feed/609/", r"https://www\.zman\.co\.il/\d{6}/",
-                     page_url="https://www.zman.co.il/feed/609/page/{n}/")]},
     },
 }
 

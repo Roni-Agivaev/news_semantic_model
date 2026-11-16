@@ -2,7 +2,7 @@
 
 // Fixed source -> color slot, so a site keeps its color no matter what is filtered.
 const SOURCES = ["Ynet", "Kan News", "Channel 13", "Channel 14", "I24 NEWS", "Channel 12",
-                 "Maariv", "Israel Hayom", "JDN", "Zman Israel", "Davar"];
+                 "Maariv", "Israel Hayom", "JDN"];
 // Daily schedule in UTC (mirrors web/vercel.json and .github/workflows/kan-daily.yml).
 // The same page serves /politics; everything it loads is for that topic.
 const TOPIC = location.pathname.replace(/\/+$/, "") === "/politics" ? "politics" : "defense";

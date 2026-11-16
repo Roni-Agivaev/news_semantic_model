@@ -1,7 +1,7 @@
 // Scrape logs page: recent runs on the left, the selected run's events on the right.
 // Follows a running scrape live by polling /api/logs.
 const SOURCES = ["Ynet", "Kan News", "Channel 13", "Channel 14", "I24 NEWS", "Channel 12",
-                 "Maariv", "Israel Hayom", "JDN", "Zman Israel", "Davar"];
+                 "Maariv", "Israel Hayom", "JDN"];
 const POLL_LIVE_MS = 4000;    // while a run is in progress
 const POLL_IDLE_MS = 30000;   // otherwise, to notice a new run
 const TRIGGERS = {

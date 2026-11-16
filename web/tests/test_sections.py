@@ -138,8 +138,6 @@ EXAMPLES = {
     ("defense", "Maariv", "defense"): ("/news/military/article-1388506", "/news/politics/article-1388528"),
     ("defense", "Israel Hayom", "defense"): ("/news/defense/article/21852439", "/news/politics/article/21852749"),
     ("defense", "JDN", "defense"): ("https://www.jdn.co.il/news/2765329/", "https://www.jdn.co.il/category/news/1/"),
-    ("defense", "Zman Israel", "defense"): ("https://www.zman.co.il/742318/", "https://www.zman.co.il/newsletter/2026-11-12/"),
-    ("defense", "Davar", "defense"): ("https://www.davar1.co.il/706675/", "https://www.davar1.co.il/topic/x/"),
     ("politics", "Kan News", "combined"): ("/content/kan-news/politic/1119201/", "/content/kan-news/defense/1119265/"),
     ("politics", "Channel 13", "domestic"): ("/item/news/politics/politics/o8gxd-905461350/",
                                               "/item/news/politics/security/abc-1/"),
@@ -156,7 +154,6 @@ EXAMPLES = {
     ("politics", "Israel Hayom", "diplomatic"): ("/news/geopolitics/article/21850000", "/news/defense/article/21852439"),
     ("politics", "JDN", "domestic"): ("https://www.jdn.co.il/news/2765578/", "https://www.jdn.co.il/category/news/1/"),
     ("politics", "JDN", "diplomatic"): ("https://www.jdn.co.il/news/2765579/", "https://www.jdn.co.il/category/news/1/"),
-    ("politics", "Zman Israel", "combined"): ("https://www.zman.co.il/741685/", "https://www.zman.co.il/feed/609/"),
 }
 
 

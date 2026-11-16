@@ -35,7 +35,7 @@ class BuildArgsTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             backfill.build_args(["--topic", "sports"], now=NOW)
         with self.assertRaises(SystemExit):
-            backfill.build_args(["--topic", "politics", "Davar"], now=NOW)  # Davar has no politics section
+            backfill.build_args(["--topic", "politics", "Nope"], now=NOW)
 
 
 if __name__ == "__main__":

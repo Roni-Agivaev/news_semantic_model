@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from lib import auth, db  # noqa: E402
 from lib.params import topic_and_section  # noqa: E402
+from lib.scraper import sources as topic_sources  # noqa: E402
 
 
 class handler(BaseHTTPRequestHandler):
@@ -34,7 +35,8 @@ class handler(BaseHTTPRequestHandler):
         try:
             conn = db.connect()
             try:
-                body = db.stats(conn, by=by, days=days, topic=topic, section=section)
+                body = db.stats(conn, by=by, days=days, topic=topic, section=section,
+                                sources=topic_sources(topic))
             finally:
                 conn.close()
             status = 200

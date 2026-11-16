@@ -297,7 +297,7 @@ def get_scrape_run(conn, run_id, max_events=5000):
     return {"run": run, "events": events} if run else None
 
 
-def stats(conn, by="ingested", days=30, coverage_days=90, topic="defense", section=""):
+def stats(conn, by="ingested", days=30, coverage_days=90, topic="defense", section="", sources=None):
     """Counts for the dashboard, for one topic. `by` picks which date articles
     are grouped on; days=0 means all time. `section` (politics: domestic,
     diplomatic or combined) narrows the articles; "" means all of them."""
@@ -314,6 +314,8 @@ def stats(conn, by="ingested", days=30, coverage_days=90, topic="defense", secti
             SELECT *, (error IS NULL AND links_found > 0) AS ok,
                    row_number() OVER (PARTITION BY source ORDER BY ran_at DESC) AS rn
             FROM ingest_runs WHERE topic = %(topic)s
+              -- only outlets still scraped: a removed one keeps its old runs
+              AND (%(sources)s::text[] IS NULL OR source = ANY(%(sources)s))
         ),
         a AS (
             SELECT * FROM {table} WHERE %(section)s = '' OR section = %(section)s
@@ -391,7 +393,8 @@ def stats(conn, by="ingested", days=30, coverage_days=90, topic="defense", secti
               ORDER BY coalesce(published_at, ingested_at) DESC LIMIT 12) a)
         ) AS stats
         """,
-        {"tz": tz, "days": days, "cov": coverage_days, "topic": topic, "section": section},
+        {"tz": tz, "days": days, "cov": coverage_days, "topic": topic, "section": section,
+         "sources": list(sources) if sources is not None else None},
     ).fetchone()
     out = {"topic": topic, "section": section, "by": by, "days": days,
            "coverage_days": coverage_days, **row["stats"]}

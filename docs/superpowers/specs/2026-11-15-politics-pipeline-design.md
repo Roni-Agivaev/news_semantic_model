@@ -1,6 +1,11 @@
 # Politics pipeline and new outlets: design
 
-Date: 2026-11-15. Status: approved in conversation, ready for an implementation plan.
+Date: 2026-11-15. Status: implemented.
+
+> **Update 2026-11-16:** Zman Israel and Davar were removed from both topics.
+> Their Cloudflare began answering 403 with a bot check to the local backfill
+> and to the Vercel crons. Their old run rows are kept, and the dashboard lists
+> only the sources still in the registry.
 
 ## Goal
 
