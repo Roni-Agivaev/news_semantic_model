@@ -144,7 +144,6 @@ EXAMPLES = {
     ("politics", "Channel 13", "diplomatic"): ("/item/news/politics/state-policy/goffman-905460300/",
                                                 "/item/news/politics/security/abc-1/"),
     ("politics", "Channel 14", "combined"): ("/article/1788327", "/archive/64850"),
-    ("politics", "I24 NEWS", "combined"): ("/he/news/news/politics/artc-85da5b7c", "/he/news/news/defense-news/artc-85da5b7d"),
     ("politics", "Channel 12", "domestic"): ("/news-politics/2026_q4/Article-cd307e6b8dcd1a1027.htm",
                                              "/news-military/2026_q4/Article-aaaa.htm"),
     ("politics", "Channel 12", "diplomatic"): ("/news-diplomatic/2026_q4/Article-24c5367a0f4d1a1027.htm",
@@ -174,6 +173,41 @@ class EverySectionTest(unittest.TestCase):
                 got = scraper._links_on_page({**section, "base": site["base"]}, html)
                 expected = good if good.startswith("http") else site["base"] + good
                 self.assertEqual(got, [expected])
+
+
+class I24FeedTest(Base):
+    """2026-11-18: i24 moved its Hebrew site to i24news.co.il, new articles got
+    readable slugs instead of artc- ids, and the section pages stopped listing
+    them. Every I24 run found no links for five days. The feed lists both."""
+
+    FEED = """<rss><channel>
+      <link>https://www.i24news.co.il/news/news/defense-news</link>
+      <item><link>https://www.i24news.co.il/defense-news/tel-aviv-threatening-flyers-man-arrested-iran-dire</link></item>
+      <item><link>https://www.i24news.co.il/defense-news/tooz95</link></item>
+      <item><link>https://www.i24news.co.il/news/news/defense-news/artc-5da456fa</link>
+            <guid>https://www.i24news.co.il/defense-news/artc-5da456fa</guid></item>
+      <item><guid isPermaLink="true">https://www.i24news.co.il/news/news/defense-news/artc-0000abcd</guid></item>
+      <item><description>see https://www.i24news.co.il/defense-news/matkal</description>
+            <link>https://www.i24news.co.il/news/news/defense-news/idf-chief-of-staff-new-plan-north</link></item>
+    </channel></rss>"""
+
+    def links(self, pages, topic="defense", **kw):
+        return super().links(pages, topic=topic, source="I24 NEWS", **kw)
+
+    def test_both_article_shapes_come_from_the_feed_on_the_new_domain(self):
+        got = self.links({"https://www.i24news.co.il/news/news/defense-news/feed": self.FEED})
+        self.assertEqual([u for u, _ in got], [
+            "https://www.i24news.co.il/defense-news/tel-aviv-threatening-flyers-man-arrested-iran-dire",
+            "https://www.i24news.co.il/news/news/defense-news/artc-5da456fa",
+            "https://www.i24news.co.il/news/news/defense-news/artc-0000abcd",
+            "https://www.i24news.co.il/news/news/defense-news/idf-chief-of-staff-new-plan-north",
+        ], msg="one URL per item: its <link>, or its <guid> when it has no link")
+
+    def test_politics_reads_its_own_feed(self):
+        feed = self.FEED.replace("defense-news", "politics")
+        got = self.links({"https://www.i24news.co.il/news/news/politics/feed": feed}, topic="politics")
+        self.assertEqual(len(got), 4)
+        self.assertTrue(all(sec == "combined" for _, sec in got))
 
 
 class SitemapTest(Base):

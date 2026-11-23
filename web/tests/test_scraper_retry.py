@@ -62,12 +62,23 @@ class VirtualClock:
         return fetch
 
 
+# i24's section page as it was scraped until 2026-11-18 (it now reads its RSS
+# feed). The cold-cache retry these tests pin down still applies to every HTML
+# section page, so they keep this HTML section as their subject.
+LEGACY_I24_HTML = {"base": "https://www.i24news.tv", "sections": [{
+    "name": "defense", "category_url": "https://www.i24news.tv/he/news/news/defense-news",
+    "link_pattern": r"/he/news/news/defense-news/artc-[A-Za-z0-9]+"}]}
+
+
 class ColdCacheRetryTest(unittest.TestCase):
     def setUp(self):
         self.clock = VirtualClock()
         patch_sleep = mock.patch.object(scraper.time, "sleep", self.clock.sleep)
         patch_sleep.start()
         self.addCleanup(patch_sleep.stop)
+        patch_site = mock.patch.dict(scraper.SITES["defense"], {"I24 NEWS": LEGACY_I24_HTML})
+        patch_site.start()
+        self.addCleanup(patch_site.stop)
 
     def _report(self):
         return (f"gave up at t={self.clock.now:.0f}s after "

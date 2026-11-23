@@ -38,6 +38,19 @@ def _section(name, category_url, link_pattern, page_url=None, rss_url=None):
 _KAN = {"base": "https://www.kan.org.il", "server_blocked": True,
         "sitemap_url": "https://www.kan.org.il/media/sitemap/news/sitemap.xml"}
 
+# i24 moved its Hebrew site from i24news.tv/he to i24news.co.il around 2026-11-18.
+# New articles got readable slugs (/defense-news/<words-joined-by-dashes>) next
+# to the older artc-<id> ones, and the section pages stopped listing the new
+# ones, so the section's RSS feed (50 items, about 2-3 weeks) is read instead.
+# A slug needs at least three words: that skips short codes like /tooz95, whose
+# page headline is just the section name, and tag pages like /matkal.
+_I24 = "https://www.i24news.co.il"
+
+
+def _i24_articles(section):
+    return rf"(?:/news/news)?/{section}/(?:artc-[A-Za-z0-9]+|[a-z0-9]+(?:-[a-z0-9]+){{2,}})"
+
+
 # topic -> source -> {base, sections, [sitemap_url], [server_blocked]}
 # A section: name, category_url, regex for article links on it, and optionally
 # page_url (pages 2..N, "{n}") or rss_url (read the feed instead of the page).
@@ -57,10 +70,9 @@ SITES = {
                      page_url="https://13tv.co.il/news/politics/security/page/{n}/")]},
         "Channel 14": {"base": "https://www.c14.co.il", "sections": [
             _section("defense", "https://www.c14.co.il/archive/990", r"/article/\d+")]},
-        "I24 NEWS": {"base": "https://www.i24news.tv", "sections": [
-            _section("defense", "https://www.i24news.tv/he/news/news/defense-news",
-                     r"/he/news/news/defense-news/artc-[A-Za-z0-9]+",
-                     page_url="https://www.i24news.tv/he/news/news/defense-news?page={n}")]},
+        "I24 NEWS": {"base": _I24, "sections": [
+            _section("defense", _I24 + "/news/news/defense-news", _i24_articles("defense-news"),
+                     rss_url=_I24 + "/news/news/defense-news/feed")]},
         "Channel 12": {"base": "https://www.mako.co.il", "sections": [
             _section("defense", "https://www.mako.co.il/news-military",
                      r"/news-military/[A-Za-z0-9_/\-]*Article-[A-Za-z0-9]+\.htm",
@@ -93,9 +105,9 @@ SITES = {
                      page_url="https://13tv.co.il/news/politics/state-policy/page/{n}/")]},
         "Channel 14": {"base": "https://www.c14.co.il", "sections": [
             _section("combined", "https://www.c14.co.il/archive/65839", r"/article/\d+")]},
-        "I24 NEWS": {"base": "https://www.i24news.tv", "sections": [
-            _section("combined", "https://www.i24news.tv/he/news/news/politics",
-                     r"/he/news/news/politics/artc-[A-Za-z0-9]+")]},
+        "I24 NEWS": {"base": _I24, "sections": [
+            _section("combined", _I24 + "/news/news/politics", _i24_articles("politics"),
+                     rss_url=_I24 + "/news/news/politics/feed")]},
         "Channel 12": {"base": "https://www.mako.co.il", "sections": [
             _section("domestic", "https://www.mako.co.il/news-politics",
                      r"/news-politics/[A-Za-z0-9_/\-]*Article-[A-Za-z0-9]+\.htm",
@@ -275,13 +287,19 @@ def _matches(section, url):
     return re.fullmatch(pattern, url) is not None
 
 
+def _feed_value(item, tag):
+    m = re.search(rf"<{tag}\b[^>]*>\s*(?:<!\[CDATA\[)?\s*(.*?)\s*(?:\]\]>)?\s*</{tag}>", item, flags=re.S)
+    return html_lib.unescape(m.group(1)).strip() if m else ""
+
+
 def _links_from_rss(xml, section):
-    """Article URLs in an RSS feed's <link>/<guid> values, in feed order."""
+    """One article URL per feed <item>, in feed order: its <link>, or its <guid>
+    when it has no link. (i24's guids spell the same article another way, so
+    reading both counted every such article twice.)"""
     urls = []
-    for value in re.findall(r"<(?:link|guid)\b[^>]*>\s*(?:<!\[CDATA\[)?\s*(.*?)\s*(?:\]\]>)?\s*</(?:link|guid)>",
-                            xml, flags=re.S):
-        url = html_lib.unescape(value).strip()
-        if _matches(section, url) and url not in urls:
+    for item in re.findall(r"<item\b.*?</item>", xml, flags=re.S):
+        url = _feed_value(item, "link") or _feed_value(item, "guid")
+        if url and _matches(section, url) and url not in urls:
             urls.append(url)
     return urls
 
